@@ -1,0 +1,46 @@
+# Recovery
+
+Read this file when a script exits non-zero, or a session misbehaves.
+
+## Startup dialog (`spawn.sh` reports STARTUP DIALOG, status needs_approval)
+
+The agent is showing a folder-trust or approval dialog. Do not answer it: no keys, no prompt. Tell the user which pane it is and what it asks, and let them decide in that pane.
+
+When they confirm they have answered it, run:
+
+```bash
+$SKILL_DIR/scripts/spawn.sh --run $RUN --name <name> --recheck
+```
+
+Trust is remembered per path, and worktree paths are stable per repository and worker name, so this is normally a one-time event. Codex applies trust at the main repository root, so a repository the user already trusts in Codex does not ask. Claude Code asks once per worktree path. If the user declines, close that pane and route its work to the other provider.
+
+## dispatch.sh exit codes
+
+| Exit | Meaning | Action |
+|---|---|---|
+| 5 | Settled, but no report block was found | Run `dispatch.sh --message "Repeat only your final report block."` once. If it is still missing, read `herdr agent read <name> --source recent-unwrapped --lines 120`. |
+| 6 | Blocked, or NOT SENT because a dialog is on screen | Read the pane, then ask the user. Never answer the dialog yourself. |
+| 7 | Timeout or stall | The prompt may already have been delivered. Inspect with `herdr agent get` and `agent read` before acting, and never resubmit blindly. If it is still working, run `herdr agent wait <name> --timeout <ms>` in the background. |
+
+## Guard violation (`guard.sh verify` exits 4)
+
+A ref, HEAD, branch or git config changed. It was either a worker, or the user working in parallel. Stop integrating. Show the user the violation lines, and find out which worker did it from its transcript. Do not undo anything yourself, because reverting refs is destructive. Continue only after the user decides.
+
+## Quota, rate limit or provider failure
+
+Preserve the partial work first: run `delta.sh` for that worker. Make sure the worker has settled. Then reassign the remaining work to the other provider, with an assignment that names the partial delta. Do not retry in a loop, switch to a different model, or set up paid access.
+
+## Worker went out of scope
+
+If a worker wrote outside its owned files or its worktree, stop it with `herdr agent send-keys <name> esc` while it is working. Keep its worktree and delta, run `guard.sh verify`, and reassign the owned files with a fresh assignment. Report the incident.
+
+## Context compaction
+
+Rebuild your picture from these, and do not start duplicate workers because conversation context is missing:
+
+- `$RUN/state.json`: sessions, panes, status, flags;
+- `$RUN/<name>/baseline.json` and the delta files;
+- `herdr agent list`;
+- `guard.sh verify`.
+
+If you lost the `RUN` path, the newest run for this repository is under `${XDG_STATE_HOME:-~/.local/state}/herdr-duo/runs/<repo>-<hash>/`.

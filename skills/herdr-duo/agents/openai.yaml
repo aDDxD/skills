@@ -1,0 +1,4 @@
+interface:
+  display_name: "Herdr Duo"
+  short_description: "Orchestrate Luna and Haiku efficiently inside Herdr"
+  default_prompt: "Use $herdr-duo to coordinate Luna and Haiku for this task."
