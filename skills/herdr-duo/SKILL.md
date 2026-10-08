@@ -44,7 +44,7 @@ Shell variables do not survive between tool calls. Use the literal absolute path
 2. **Spawn** each implementer: `$SKILL_DIR/scripts/spawn.sh --run $RUN --name luna --provider codex --role implementer --deps-auto`. Then the second one, with `--split-from <first pane> --direction down` so the panes do not get too narrow. Workers start from your current checkout, including uncommitted work; secret-looking files are skipped. Use `--from-head` to start from HEAD only. If spawn reports **STARTUP DIALOG**, see `references/recovery.md`.
 3. **Guard:** `$SKILL_DIR/scripts/guard.sh snapshot --run $RUN`.
 4. **Assign.** Write `$RUN/<name>/assignment.md` from `references/assignments.md`.
-5. **Dispatch** both before waiting on either. Run `$SKILL_DIR/scripts/dispatch.sh --run $RUN --name <name>` as a background command for each worker. The completion notification carries the final report, so do not poll. On hosts without background notifications, run `dispatch.sh ... & dispatch.sh ... & wait` in one command.
+5. **Dispatch** with one background command: `$SKILL_DIR/scripts/dispatch-all.sh --run $RUN`. It runs every worker in parallel and prints reports in order; pass worker names to dispatch only a subset. On hosts without background notifications, run it in the foreground. If unavailable, run `dispatch.sh --run $RUN --name <name>` for each worker in parallel.
 6. **Settle.** Run `guard.sh verify`. Then compute ground truth with `delta.sh --state $RUN/<name> --out $RUN/<name>/delta.patch`. Judge the delta, never the report alone.
 7. **Review** per `references/review.md`, sized to the risk of the change.
 8. **Integrate, validate and finish** per `references/integration.md`.

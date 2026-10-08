@@ -19,7 +19,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$repo" ] || die "--repo is required"
-repo=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository: $repo"
+top=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) \
+  || die "not a git repository: $repo. Run 'git init' and make an initial commit (workers start from HEAD)"
+repo=$top
+git -C "$repo" rev-parse --verify -q HEAD >/dev/null \
+  || die "no commits in $repo yet. Make an initial commit (workers start from HEAD)"
 
 slug="$(basename "$repo")-$(printf %s "$repo" | sha256sum | cut -c1-8)"
 run="$HERDR_DUO_STATE_ROOT/runs/$slug/$(date -u +%Y%m%dT%H%M%SZ)"
@@ -82,3 +86,30 @@ deps_candidates:${deps:- none}  (pass --deps-auto to copy them)
 stale_worktrees_in_WT_ROOT:${stale:- none}  (integrate or remove before reusing a name)
 access: luna=$HERDR_DUO_LUNA_ACCESS ($HERDR_DUO_LUNA_MODEL, effort $HERDR_DUO_LUNA_EFFORT)  haiku=$HERDR_DUO_HAIKU_MODE ($HERDR_DUO_HAIKU_MODEL)
 EOF
+
+# Hint for a failed origin check. Never prints the URL itself, so no credentials leak.
+push_hint() {
+  case "$1" in
+    https://*)
+      if compgen -G "$HOME/.ssh/id_*.pub" >/dev/null; then
+        echo "credentials are not available to git for https; an SSH key exists, so run 'git remote set-url origin git@github.com:OWNER/REPO.git' (ask the user first)"
+      else
+        echo "credentials are not available to git for https; run 'gh auth setup-git' (ask the user first)"
+      fi ;;
+    *) echo "check the remote URL and access: git ls-remote origin" ;;
+  esac
+}
+
+origin_url=$(git -C "$repo" remote get-url origin 2>/dev/null || true)
+# Mask user:password@ in the printed URL.
+origin_shown=$(printf '%s' "$origin_url" | sed -E 's#^([a-zA-Z+.-]+://)[^/@]*@#\1***@#')
+echo "remote: ${origin_shown:-none}"
+if [ "$push" = true ]; then
+  if [ -z "$origin_url" ]; then
+    echo "push_check: skipped (no origin remote)"
+  elif GIT_TERMINAL_PROMPT=0 timeout 15 git -C "$repo" ls-remote --exit-code origin HEAD >/dev/null 2>&1; then
+    echo "push_check: ok"
+  else
+    echo "push_check: FAILED ($(push_hint "$origin_url"))"
+  fi
+fi

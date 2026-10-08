@@ -34,6 +34,19 @@ Preserve the partial work first: run `delta.sh` for that worker. Make sure the w
 
 If a worker wrote outside its owned files or its worktree, stop it with `herdr agent send-keys <name> esc` while it is working. Keep its worktree and delta, run `guard.sh verify`, and reassign the owned files with a fresh assignment. Report the incident.
 
+## Push fails: could not read Username
+
+Symptom: `run-init.sh --push` prints `push_check: FAILED (credentials are not available to git for https ...)`, or git reports `could not read Username for 'https://...': terminal prompts disabled`.
+
+Cause: `origin` is an https URL and git has no credential helper. The scripts run git with `GIT_TERMINAL_PROMPT=0`, so git fails instead of asking for a username.
+
+Fixes, for the user to choose. Do not apply either one yourself, because both change git configuration or the remote, which `guard.sh verify` watches:
+
+- If an SSH key exists (`~/.ssh/id_*.pub`): `git remote set-url origin git@github.com:OWNER/REPO.git`.
+- Otherwise: `gh auth setup-git`, which installs a credential helper for https.
+
+After the user applies a fix, rerun `run-init.sh --push` to confirm `push_check: ok`. Do not retry the push in a loop.
+
 ## Context compaction
 
 Rebuild your picture from these, and do not start duplicate workers because conversation context is missing:

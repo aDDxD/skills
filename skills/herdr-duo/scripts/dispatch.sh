@@ -57,13 +57,7 @@ out=$(herdr agent prompt "$name" "$message" --wait --timeout $((timeout_min * 60
 
 agent_state=$(agent_status "$name")
 
-report=$(herdr agent read "$name" --source recent-unwrapped --lines 150 2>/dev/null | python3 -c '
-import sys
-lines = sys.stdin.read().splitlines()
-# Last real report; template lines such as "STATUS: done | blocked | failed" are skipped.
-idx = max((i for i, l in enumerate(lines) if l.strip().startswith("STATUS:") and "|" not in l), default=None)
-print("\n".join(lines[idx:idx + 40]) if idx is not None else "")
-')
+report=$(herdr agent read "$name" --source recent-unwrapped --lines 150 2>/dev/null | python3 "$(dirname "$(realpath "$0")")/extract-report.py")
 
 code=0
 if [ "$rc" -ne 0 ]; then
