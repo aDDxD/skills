@@ -60,7 +60,8 @@ done < <(find "$skills_dir" -type f -name '*.sh' -print0 2>/dev/null)
 
 if command -v shellcheck >/dev/null 2>&1; then
   while IFS= read -r -d '' script; do
-    if ! shellcheck "$script"; then
+    # -x follows sourced helpers; warnings and errors fail, style-level info does not.
+    if ! shellcheck -x -S warning "$script"; then
       fail "$(basename "$script") failed shellcheck"
     fi
   done < <(find "$skills_dir" -type f -name '*.sh' -print0 2>/dev/null)

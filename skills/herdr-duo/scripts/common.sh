@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers for herdr-duo scripts. Source it; do not execute it.
 # Defaults can be overridden in ${XDG_CONFIG_HOME:-~/.config}/herdr-duo/config.env
 # or through the environment of the calling shell.

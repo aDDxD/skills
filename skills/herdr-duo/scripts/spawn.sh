@@ -31,9 +31,9 @@ while [ $# -gt 0 ]; do
     --review-of) review_of=$2; shift 2 ;;
     --split-from) split_from=$2; shift 2 ;;
     --direction) direction=$2; shift 2 ;;
-    --from-checkout) source_mode=checkout; shift ;;
-    --from-head) source_mode=head; shift ;;
-    --patch|--copy) source_mode=selective; base_args+=("$1" "$2"); shift 2 ;;
+    --from-checkout) source_mode="checkout"; shift ;;
+    --from-head) source_mode="head"; shift ;;
+    --patch|--copy) source_mode="selective"; base_args+=("$1" "$2"); shift 2 ;;
     --deps) base_args+=("$1" "$2"); shift 2 ;;
     --deps-auto) base_args+=("$1"); shift ;;
     --dry-run) dry=yes; shift ;;
@@ -64,7 +64,7 @@ if [ "${recheck:-no}" = yes ]; then
   [ -n "$pane" ] || die "no recorded session named $name in this run"
   dialog=$(pane_dialog "$pane")
   st=$(agent_status "$name")
-  if [ -z "$dialog" ] && { [ "$st" = idle ] || [ "$st" = done ]; }; then
+  if [ -z "$dialog" ] && { [ "$st" = idle ] || [ "$st" = "done" ]; }; then
     set_record_status ready; echo "name=$name status=ready pane=$pane"; exit 0
   fi
   echo "name=$name status=${st:-unknown} pane=$pane dialog=${dialog:-none}" >&2
