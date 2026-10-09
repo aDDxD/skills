@@ -72,6 +72,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Forget registrations of worktrees whose directories are gone (e.g. a deleted state
+# dir); otherwise git refuses to reuse the stable path. Existing worktrees are untouched.
+git -C "$repo" worktree prune >/dev/null 2>&1 || true
 # Detached worktree: no branch is created and the repository HEAD is untouched.
 if ! git -C "$repo" worktree add --detach "$wt" "$head" >/dev/null 2>"$state/worktree-add.log"; then
   cat "$state/worktree-add.log" >&2

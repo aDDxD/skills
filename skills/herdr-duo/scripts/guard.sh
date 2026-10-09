@@ -21,6 +21,7 @@ while [ $# -gt 0 ]; do
 done
 [ "$mode" = snapshot ] || [ "$mode" = verify ] || die "usage: guard.sh snapshot|verify --run DIR"
 [ -f "$run/state.json" ] || die "no state.json in $run"
+require_lead "$run"
 
 capture() {
   python3 - "$run/state.json" <<'PY'

@@ -157,7 +157,8 @@ def render(state, progress, lead, agents):
         if r.get("status") in ("needs_approval", "blocked", "settled_no_report", "timeout_or_stalled"):
             extra.append(r["status"])
         left = remaining(a)
-        if left is not None:
+        # Idle panes keep the figure of their last turn; only working panes are current.
+        if left is not None and a.get("agent_status") == "working":
             quota[r["provider"]] = min(left, quota.get(r["provider"], 100))
         L.append(f"  {r['name']:<14} {st:<8} {' · '.join(extra)}")
     if lead and agents.get(lead.get("pane")):

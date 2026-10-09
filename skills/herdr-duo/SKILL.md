@@ -42,7 +42,7 @@ If preflight reports a missing `HERDR_ENV`, report that the command environment 
 
 - **Base workers scale with the plan's real parallelism.** Spawn one Luna or Haiku per independent task that has its own files, a clear acceptance check, and enough substance to pay for a fresh session (a new session costs about 16k tokens before any work). Use zero workers for work you can verify directly, and one for strictly sequential work. Three tiny edits are one task, not three workers.
 - Do not spawn workers whose tasks would wait on each other or share a file; sequence those through one worker instead. When tasks outnumber good parallel slots, run waves: integrate a worker's delta, then give it the next task with a new assignment (its baseline has advanced).
-- Mix providers so cross-review stays possible. With more than two workers, spawn the extra panes with `--split-from` on alternating existing panes, so none gets too narrow.
+- Mix providers so cross-review stays possible. `spawn.sh` places panes for you: it splits the largest pane the run owns along its longer side and opens a new tab ("duo 2", ...) when no pane has room (`HERDR_DUO_MIN_PANE_COLS`, default 70, and `HERDR_DUO_MIN_PANE_ROWS`, default 18). It never splits your pane or panes the run did not create.
 - **Strong sessions never scale horizontally.** At most one Sol or Sonnet session is live per run; `spawn.sh` and `escalate.sh` refuse a second. Plan a task as strong from the start only when it needs cross-cutting reasoning that cheap models get wrong, for example a financial rule spread over several files. Otherwise strong sessions come only from escalation (below).
 - **Reviewers** are read-only and on demand, as set out in `references/review.md`. Close them once their report is in.
 - Reuse live base sessions for follow-ups (`dispatch.sh --message`) and fix rounds (`dispatch.sh --fix`). Close sessions you will not reuse.
@@ -81,7 +81,7 @@ $SKILL_DIR/scripts/progress.sh --run $RUN check "<label>" <exit code> "<summary,
 $SKILL_DIR/scripts/progress.sh --run $RUN note "<decision or next step a successor must know>"
 ```
 
-Write a `note` at each milestone: a plan decision, an integration, a wave finished, a dispatch you are about to wait on. Write steps in the user's language.
+Write a `note` at each milestone: a plan decision, an integration, a wave finished, a dispatch you are about to wait on. Before you ask the user a question, note it as `waiting for user: <question>`, so a successor asks again instead of guessing. Write steps in the user's language.
 
 ### Resume a run
 
@@ -91,12 +91,12 @@ When you were started to resume a run (a handoff prompt, or the user asks after 
 2. Run `status.sh --run $RUN`, and read `$RUN/handoff.md` and the `progress.json` checklist. Together with `state.json` they are the whole run; do not re-plan finished steps, and never spawn duplicates of live workers.
 3. Run `guard.sh verify --run $RUN`.
 4. A worker shown as `dispatched` may still be working for the previous lead. Collect it with `dispatch.sh --run $RUN --name <name> --collect` in the background: it sends nothing, waits, and prints the report.
-5. Continue from the active step. Write a `progress.sh note` that you took over.
+5. If the last note says `waiting for user`, ask the user that question first. Otherwise continue from the active step. Write a `progress.sh note` that you took over.
 
 ## Workflow
 
 1. **Plan.** Write acceptance criteria, dependencies and file ownership per task. Each file has one writer. Shared contracts, lockfiles, schemas and generated files get exactly one writer. Record the steps with `progress.sh plan`.
-2. **Spawn** each implementer: `$SKILL_DIR/scripts/spawn.sh --run $RUN --name luna --provider codex --role implementer --deps-auto`. Then the others, with `--split-from <an existing worker pane> --direction down|right` so the panes do not get too narrow. Give each worker a short task-based name (`luna-api`, `haiku-docs`). Workers start from your current checkout, including uncommitted work; secret-looking files are skipped. Use `--from-head` to start from HEAD only. If spawn reports **STARTUP DIALOG**, see `references/recovery.md`.
+2. **Spawn** each implementer: `$SKILL_DIR/scripts/spawn.sh --run $RUN --name luna --provider codex --role implementer --deps-auto`. Then the others the same way; placement is automatic (pass `--split-from <pane> --direction right|down` only to override it). Give each worker a short task-based name (`luna-api`, `haiku-docs`). Workers start from your current checkout, including uncommitted work; secret-looking files are skipped. Use `--from-head` to start from HEAD only. If spawn reports **STARTUP DIALOG**, see `references/recovery.md`.
 3. **Guard:** `$SKILL_DIR/scripts/guard.sh snapshot --run $RUN`.
 4. **Assign.** Write `$RUN/<name>/assignment.md` from `references/assignments.md`.
 5. **Dispatch** with one background command: `$SKILL_DIR/scripts/dispatch-all.sh --run $RUN`. It runs every worker in parallel and prints reports in order; pass worker names to dispatch only a subset. On hosts without background notifications, run it in the foreground. If unavailable, run `dispatch.sh --run $RUN --name <name>` for each worker in parallel.

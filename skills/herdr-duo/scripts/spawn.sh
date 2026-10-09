@@ -7,6 +7,8 @@
 # Usage: spawn.sh --run DIR --name NAME --provider codex|claude --role implementer|reviewer
 #                 [--tier base|strong] [--continue-from NAME]
 #                 [--review-of AUTHOR] [--split-from PANE_ID] [--direction right|down]
+# Without --split-from the pane is placed by place.py: it splits the largest pane the
+# run owns along its longer side, and opens a new tab when no pane has room left.
 #                 [baseline options: --from-head | --patch F, --copy P...; --deps D..., --deps-auto]
 #                 [--dry-run]
 # Implementers start from the lead's current checkout (--from-checkout) by default, so
@@ -160,7 +162,7 @@ fi
 if [ -n "$split_from" ]; then
   split_cmd=(herdr pane split "$split_from" --direction "$direction" --cwd "$wt" --no-focus)
 else
-  split_cmd=(herdr pane split --current --direction "$direction" --cwd "$wt" --no-focus)
+  split_cmd=(python3 "$here/place.py" "$run" "$wt")
 fi
 
 if [ "$dry" = yes ]; then
@@ -169,9 +171,16 @@ if [ "$dry" = yes ]; then
   exit 0
 fi
 
-split_out=$("${split_cmd[@]}" 2>&1) || { echo "$split_out" >&2; die "pane split failed"; }
-pane=$(printf %s "$split_out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])') \
-  || die "could not read pane id from: $split_out"
+tab=""
+if [ -z "$split_from" ] && placed=$("${split_cmd[@]}" 2>/dev/null) && [ -n "$placed" ]; then
+  read -r pane tab <<<"$placed"
+else
+  # Explicit placement, or place.py could not read the layout: split next to the caller.
+  [ -n "$split_from" ] || split_cmd=(herdr pane split --current --direction "$direction" --cwd "$wt" --no-focus)
+  split_out=$("${split_cmd[@]}" 2>&1) || { echo "$split_out" >&2; die "pane split failed"; }
+  pane=$(printf %s "$split_out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])') \
+    || die "could not read pane id from: $split_out"
+fi
 
 status=ready
 start_out=$(herdr agent start "$name" --kind "$provider" --pane "$pane" --timeout 90000 -- "${args[@]}" 2>&1) || status=not_ready
@@ -180,7 +189,7 @@ dialog=$(pane_dialog "$pane")
 [ -z "$dialog" ] || status=needs_approval
 
 state_edit "$run" '
-name, provider, role, pane, wt, sdir, status, review_of, agent_args, tier, continue_from = args
+name, provider, role, pane, wt, sdir, status, review_of, agent_args, tier, continue_from, tab = args
 key = "workers" if role == "implementer" else "reviewers"
 rec = {"name": name, "provider": provider, "role": role, "tier": tier, "pane": pane, "worktree": wt,
        "state_dir": sdir, "status": status, "args": agent_args, "fix_rounds": 0}
@@ -188,8 +197,10 @@ if review_of:
     rec["review_of"] = review_of
 if continue_from:
     rec["continues"] = continue_from
+if tab:
+    rec["tab"] = tab
 state[key] = [r for r in state.get(key, []) if r.get("name") != name] + [rec]
-' "$name" "$provider" "$role" "$pane" "$wt" "$sdir" "$status" "$review_of" "${args[*]}" "$tier" "$continue_from"
+' "$name" "$provider" "$role" "$pane" "$wt" "$sdir" "$status" "$review_of" "${args[*]}" "$tier" "$continue_from" "$tab"
 
 echo "name=$name provider=$provider role=$role tier=$tier status=$status pane=$pane"
 echo "worktree=$wt [$baseline_note]"
