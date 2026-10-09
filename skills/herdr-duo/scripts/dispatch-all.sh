@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Dispatch workers in parallel, then print their results in the requested order.
 # Usage: dispatch-all.sh --run DIR [--timeout-min N] [name...]
-# With no names, all workers recorded in DIR/state.json are dispatched.
+# With no names, every live worker (not cleaned or escalated) is dispatched.
 set -euo pipefail
 script_dir=$(dirname "$(realpath "$0")")
 run=""; timeout_min=30; names=()
@@ -21,7 +21,8 @@ if [ ${#names[@]} -eq 0 ]; then
 import json, sys
 state = json.load(open(sys.argv[1]))
 for worker in state.get("workers", []):
-    print(worker["name"])
+    if worker.get("status") not in ("cleaned", "escalated"):
+        print(worker["name"])
 PY
 )
 fi

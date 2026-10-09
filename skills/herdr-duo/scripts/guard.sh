@@ -46,7 +46,8 @@ snap = {
 for w in state.get("workers", []):
     wt = w.get("worktree")
     bj = os.path.join(w.get("state_dir", ""), "baseline.json")
-    if not wt or not os.path.exists(bj):
+    # Cleaned worktrees are gone, and an escalated one is checked under its successor.
+    if not wt or not os.path.isdir(wt) or not os.path.exists(bj) or w.get("status") in ("cleaned", "escalated"):
         continue
     snap["worktrees"][w["name"]] = {
         "path": wt,

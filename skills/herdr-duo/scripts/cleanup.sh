@@ -22,11 +22,17 @@ done
 [ -f "$run/state.json" ] || die "no state.json in '$run'"
 run=$(realpath "$run")
 
-read -r role pane wt < <(python3 -c '
+read -r role pane wt sdir sharers < <(python3 -c '
 import json, sys
 s = json.load(open(sys.argv[1]))
-r = next((r for k in ("workers", "reviewers") for r in s.get(k, []) if r["name"] == sys.argv[2]), None)
-print(r["role"], r.get("pane") or "-", r.get("worktree") or "-") if r else print("- - -")
+recs = [r for k in ("workers", "reviewers") for r in s.get(k, [])]
+r = next((r for r in recs if r["name"] == sys.argv[2]), None)
+if not r:
+    print("- - - - -"); sys.exit()
+# Other live implementers in the same worktree (an escalation continues in place).
+others = [o["name"] for o in recs if o["name"] != r["name"] and o.get("role") == "implementer"
+          and o.get("worktree") == r.get("worktree") and o.get("status") not in ("cleaned", "escalated")]
+print(r["role"], r.get("pane") or "-", r.get("worktree") or "-", r.get("state_dir") or "-", ",".join(others) or "-")
 ' "$run/state.json" "$name")
 [ "$role" != "-" ] || die "no recorded session named $name in this run"
 
@@ -35,8 +41,9 @@ if [ "$keep_pane" = no ] && [ "$pane" != "-" ]; then
 fi
 
 # Reviewers work inside the author's worktree; only implementers own one.
-if [ "$role" = implementer ] && [ -d "$wt" ]; then
-  sdir="$run/$name"
+if [ "$role" = implementer ] && [ "$sharers" != "-" ]; then
+  echo "worktree $wt kept: still used by $sharers"
+elif [ "$role" = implementer ] && [ -d "$wt" ]; then
   "$here/delta.sh" --state "$sdir" --out "$sdir/delta.final.patch" >/dev/null
   if [ ! -s "$sdir/delta.final.patch" ]; then
     reason="no changes"
@@ -56,13 +63,4 @@ if [ "$role" = implementer ] && [ -d "$wt" ]; then
   echo "removed worktree $wt ($reason)"
 fi
 
-python3 - "$run/state.json" "$name" <<'PY'
-import json, sys
-path, name = sys.argv[1:]
-s = json.load(open(path))
-for k in ("workers", "reviewers"):
-    for r in s.get(k, []):
-        if r["name"] == name:
-            r["status"] = "cleaned"
-json.dump(s, open(path, "w"), indent=2)
-PY
+set_field "$run" "$name" status cleaned

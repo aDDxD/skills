@@ -40,12 +40,13 @@ Add one third session only when one of these holds:
 Rules:
 
 - Use the provider that did not author the change. If only one provider is available, use it in a fresh session, never the author's own session.
+- For high-risk logic such as financial rules, you may spawn the arbiter with `--tier strong`, provided no other strong session is live. Close it as soon as its report is in.
 - Spawn it with `--role reviewer`. Its read-only profile, plus the before/after comparison above, keeps it honest.
 - It counts against the cap while it is open. Close it with `herdr pane close <pane>` once its report is in, unless a follow-up round is planned.
-- Two implementers plus one reviewer makes three sessions. A fourth session is only for a second reviewer on high-risk work.
+- Review sessions are sized to risk, not to the number of workers: many low-risk deltas need no reviewer at all, and one reviewer session can review several small medium-risk deltas in turn.
 
 ## Handling findings
 
-- **Blocking:** send it to the implementation owner as a fix round (`dispatch.sh --message`), quoting the finding. Then re-run `delta.sh` and review only what changed. Allow at most two fix rounds; after that, stop and report to the user.
+- **Blocking:** send it to the implementation owner as a fix round (`dispatch.sh --fix`), quoting the finding. Then re-run `delta.sh` and review only what changed. If the fix round fails too, apply the escalation rule in `SKILL.md`: escalate non-mechanical work once to a strong session; for mechanical work, or a strong session that fails its one fix round, stop and report to the user.
 - **Non-blocking:** list them in the final report. Do not fix them unless the acceptance criteria require it.
 - **"No findings":** record it as a review that happened, naming the reviewer and the delta it covered.

@@ -26,9 +26,17 @@ Trust is remembered per path, and worktree paths are stable per repository and w
 
 A ref, HEAD, branch or git config changed. It was either a worker, or the user working in parallel. Stop integrating. Show the user the violation lines, and find out which worker did it from its transcript. Do not undo anything yourself, because reverting refs is destructive. Continue only after the user decides.
 
+## Escalation refused (`escalate.sh` exits 2)
+
+- "no failed fix round yet": send one `dispatch.sh --fix` round first, or use `--cross-cutting` with evidence.
+- "strong session ... is still live": finish that session's problem, integrate it and run `cleanup.sh` on it, then escalate. Never run two strong sessions in parallel.
+- "already strong": strong sessions do not escalate further. Report the blocker.
+
+If `escalate.sh` fails after closing the base pane, the work is still in the worktree and the attempt patch is saved. Start the strong session directly: `spawn.sh --run $RUN --name <new> --provider <p> --role implementer --tier strong --continue-from <worker>`.
+
 ## Quota, rate limit or provider failure
 
-Preserve the partial work first: run `delta.sh` for that worker. Make sure the worker has settled. Then reassign the remaining work to the other provider, with an assignment that names the partial delta. Do not retry in a loop, switch to a different model, or set up paid access.
+Preserve the partial work first: run `delta.sh` for that worker. Make sure the worker has settled. Then reassign the remaining work to the other provider, with an assignment that names the partial delta. Do not retry in a loop or set up paid access. A quota failure is not a reason to escalate to a strong model.
 
 ## Worker went out of scope
 
@@ -51,7 +59,7 @@ After the user applies a fix, rerun `run-init.sh --push` to confirm `push_check:
 
 Rebuild your picture from these, and do not start duplicate workers because conversation context is missing:
 
-- `$RUN/state.json`: sessions, panes, status, flags;
+- `status.sh --run $RUN`: sessions, tiers, status, fix rounds, escalations, open decisions;
 - `$RUN/<name>/baseline.json` and the delta files;
 - `herdr agent list`;
 - `guard.sh verify`.

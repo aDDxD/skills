@@ -5,6 +5,7 @@
 # (useful to restart a crashed agent).
 #
 # Usage: spawn.sh --run DIR --name NAME --provider codex|claude --role implementer|reviewer
+#                 [--tier base|strong] [--continue-from NAME]
 #                 [--review-of AUTHOR] [--split-from PANE_ID] [--direction right|down]
 #                 [baseline options: --from-head | --patch F, --copy P...; --deps D..., --deps-auto]
 #                 [--dry-run]
@@ -16,11 +17,16 @@
 #   claude implementer: --permission-mode auto           (HERDR_DUO_HAIKU_MODE=auto)
 #   codex reviewer    : read-only sandbox, never ask
 #   claude reviewer   : dontAsk, edit tools disallowed
+# Tiers: base = Luna / Haiku (scale horizontally as the plan allows);
+#        strong = Sol / Sonnet (one live strong session per run, never more).
+# --continue-from NAME: an implementer that takes over NAME's worktree and state dir
+#   (used by escalate.sh); NAME's baseline, delta and integration history carry over.
 set -euo pipefail
 here=$(dirname "$(realpath "$0")")
 . "$here/common.sh"
 
 run=""; name=""; provider=""; role=""; review_of=""; split_from=""; direction=right; dry=no; recheck=no
+tier=base; continue_from=""
 base_args=(); source_mode=checkout
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -29,6 +35,8 @@ while [ $# -gt 0 ]; do
     --provider) provider=$2; shift 2 ;;
     --role) role=$2; shift 2 ;;
     --review-of) review_of=$2; shift 2 ;;
+    --tier) tier=$2; shift 2 ;;
+    --continue-from) continue_from=$2; shift 2 ;;
     --split-from) split_from=$2; shift 2 ;;
     --direction) direction=$2; shift 2 ;;
     --from-checkout) source_mode="checkout"; shift ;;
@@ -45,18 +53,7 @@ done
 run=$(realpath "$run")
 [[ "$name" =~ ^[a-z][a-z0-9_-]{0,31}$ ]] || die "invalid agent name '$name' (must match [a-z][a-z0-9_-]{0,31})"
 
-set_record_status() {
-  python3 - "$run/state.json" "$name" "$1" <<'PY'
-import json, sys
-path, name, status = sys.argv[1:]
-state = json.load(open(path))
-for key in ("workers", "reviewers"):
-    for r in state.get(key, []):
-        if r.get("name") == name:
-            r["status"] = status
-json.dump(state, open(path, "w"), indent=2)
-PY
-}
+set_record_status() { set_field "$run" "$name" status "$1"; }
 
 # --recheck: after the user answered a startup dialog, confirm the session is usable.
 if [ "${recheck:-no}" = yes ]; then
@@ -73,7 +70,14 @@ fi
 case "$provider" in codex|claude) ;; *) die "--provider must be codex or claude" ;; esac
 case "$role" in implementer|reviewer) ;; *) die "--role must be implementer or reviewer" ;; esac
 case "$direction" in right|down) ;; *) die "--direction must be right or down" ;; esac
+case "$tier" in base|strong) ;; *) die "--tier must be base or strong" ;; esac
 [ "$role" = implementer ] || [ -n "$review_of" ] || die "a reviewer needs --review-of AUTHOR"
+[ -z "$continue_from" ] || [ "$role" = implementer ] || die "--continue-from is for implementers"
+if [ "$tier" = strong ]; then
+  busy=$(live_strong "$run")
+  [ -z "$busy" ] || [ "$busy" = "$name" ] \
+    || die "strong session '$busy' is still live; strong sessions never run in parallel. Finish and clean it up first"
+fi
 
 [ "$source_mode" = checkout ] && base_args+=(--from-checkout)
 
@@ -81,9 +85,17 @@ repo=$(json_get "$run/state.json" repo)
 wt_root=$(json_get "$run/state.json" wt_root)
 sdir="$run/$name"
 mkdir -p "$sdir"
+own_dir=$sdir
 
 need_baseline=no
-if [ "$role" = implementer ]; then
+if [ -n "$continue_from" ]; then
+  sdir=$(record_get "$run" "$continue_from" state_dir)
+  [ -f "$sdir/baseline.json" ] || die "no baseline for '$continue_from' in this run"
+  wt=$(json_get "$sdir/baseline.json" worktree)
+  [ -d "$wt" ] || die "worktree of '$continue_from' is gone: $wt"
+  baseline_note="continues $continue_from in its worktree"
+  read_dirs=("$own_dir" "$sdir")
+elif [ "$role" = implementer ]; then
   wt="$wt_root/$name"
   if [ -f "$sdir/baseline.json" ]; then
     wt=$(json_get "$sdir/baseline.json" worktree)
@@ -105,7 +117,11 @@ fi
 # Standard access profiles.
 args=()
 if [ "$provider" = codex ]; then
-  args=(-m "$HERDR_DUO_LUNA_MODEL" -c "model_reasoning_effort=$HERDR_DUO_LUNA_EFFORT")
+  if [ "$tier" = strong ]; then
+    args=(-m "$HERDR_DUO_SOL_MODEL" -c "model_reasoning_effort=$HERDR_DUO_SOL_EFFORT")
+  else
+    args=(-m "$HERDR_DUO_LUNA_MODEL" -c "model_reasoning_effort=$HERDR_DUO_LUNA_EFFORT")
+  fi
   # A shared daemon started outside Herdr can lose this pane's environment.
   # Older Codex releases have no daemon flag and already execute locally.
   codex_help=$(codex --help 2>&1) || codex_help=""
@@ -120,7 +136,7 @@ if [ "$provider" = codex ]; then
     args+=(-s workspace-write -a on-request)
   fi
 else
-  args=(--model "$HERDR_DUO_HAIKU_MODEL")
+  if [ "$tier" = strong ]; then args=(--model "$HERDR_DUO_SONNET_MODEL"); else args=(--model "$HERDR_DUO_HAIKU_MODEL"); fi
   for d in "${read_dirs[@]}"; do args+=(--add-dir "$d"); done
   if [ "$role" = reviewer ]; then
     args+=(--permission-mode dontAsk --disallowedTools "Edit,Write,NotebookEdit")
@@ -147,7 +163,7 @@ else
 fi
 
 if [ "$dry" = yes ]; then
-  printf 'DRY RUN %s (%s, %s)\n  worktree: %s [%s; source=%s]\n  split: %s\n  start: herdr agent start %s --kind %s --pane <new> --timeout 90000 -- %s\n' \
+  printf 'DRY RUN %s (%s, %s, tier '"$tier"')\n  worktree: %s [%s; source=%s]\n  split: %s\n  start: herdr agent start %s --kind %s --pane <new> --timeout 90000 -- %s\n' \
     "$name" "$provider" "$role" "$wt" "$baseline_note" "$source_mode" "${split_cmd[*]}" "$name" "$provider" "${args[*]}"
   exit 0
 fi
@@ -162,20 +178,19 @@ start_out=$(herdr agent start "$name" --kind "$provider" --pane "$pane" --timeou
 dialog=$(pane_dialog "$pane")
 [ -z "$dialog" ] || status=needs_approval
 
-python3 - "$run/state.json" "$name" "$provider" "$role" "$pane" "$wt" "$sdir" "$status" "$review_of" "${args[*]}" <<'PY'
-import json, sys
-path, name, provider, role, pane, wt, sdir, status, review_of, args = sys.argv[1:]
-state = json.load(open(path))
+state_edit "$run" '
+name, provider, role, pane, wt, sdir, status, review_of, agent_args, tier, continue_from = args
 key = "workers" if role == "implementer" else "reviewers"
-rec = {"name": name, "provider": provider, "role": role, "pane": pane, "worktree": wt,
-       "state_dir": sdir, "status": status, "args": args}
+rec = {"name": name, "provider": provider, "role": role, "tier": tier, "pane": pane, "worktree": wt,
+       "state_dir": sdir, "status": status, "args": agent_args, "fix_rounds": 0}
 if review_of:
     rec["review_of"] = review_of
+if continue_from:
+    rec["continues"] = continue_from
 state[key] = [r for r in state.get(key, []) if r.get("name") != name] + [rec]
-json.dump(state, open(path, "w"), indent=2)
-PY
+' "$name" "$provider" "$role" "$pane" "$wt" "$sdir" "$status" "$review_of" "${args[*]}" "$tier" "$continue_from"
 
-echo "name=$name provider=$provider role=$role status=$status pane=$pane"
+echo "name=$name provider=$provider role=$role tier=$tier status=$status pane=$pane"
 echo "worktree=$wt [$baseline_note]"
 echo "state_dir=$sdir"
 if [ "$status" = needs_approval ]; then

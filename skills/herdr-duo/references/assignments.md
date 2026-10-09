@@ -37,6 +37,29 @@ CHECKS: <command -> exit code, one per line>
 FINDINGS: <remaining issues, or none>
 ```
 
+## Escalation (strong session)
+
+Write it to `$RUN/<new name>/assignment.md`, as `escalate.sh` prints. The strong session works in the failed worker's worktree, where the failed attempt is still on disk. Keep the scope to the one failing problem; finished, unrelated parts of the original task stay as they are.
+
+```markdown
+# Escalation: <new name> takes over <failed worker>
+
+Problem: <the one thing that failed, 2-4 sentences, including why it matters>
+Why escalated: <what failed in each round: report, check output or review finding, quoted briefly>
+Acceptance criteria:
+- <observable outcome>
+
+Worktree: <absolute path>. It already holds the previous attempt; keep, fix or replace it as needed.
+Previous assignment (context, same rules): <$RUN/<failed worker>/assignment.md>
+Previous attempt as a patch (read-only): <attempt patch path>
+Owned files: <only the paths this problem needs>
+Read-only context: <paths, docs, contracts>
+Checks you may run: <exact fast, targeted commands>
+
+The rules of the previous assignment apply unchanged. State the root cause you found in BEHAVIOR.
+End with the same final report block (STATUS, CHANGED, BEHAVIOR, CHECKS, FINDINGS).
+```
+
 ## Reviewer
 
 ```markdown
@@ -54,6 +77,9 @@ STATUS: findings | no-findings
 FINDINGS: <numbered list, or none>
 ```
 
-## Follow-ups
+## Follow-ups and fix rounds
 
-Reuse the live session: `dispatch.sh --run $RUN --name <name> --message "<text>"`. Keep the message short and refer back to the assignment, for example: "Same assignment and rules. Fix blocking finding 2 from the review: <quote>. End with the report block." Do not resend the whole assignment.
+Reuse the live session. Keep the message short and refer back to the assignment. Do not resend the whole assignment.
+
+- A round you reject (failed checks, blocking finding, wrong behavior): `dispatch.sh --run $RUN --name <name> --fix "Same assignment and rules. Fix blocking finding 2 from the review: <quote>. End with the report block."` It counts toward escalation.
+- Anything else (repeat the report, a clarification, a new task for the same worker): `dispatch.sh --message "<text>"`, which does not count. A new task gets a new `assignment.md` and a plain `dispatch.sh`, which resets the count.

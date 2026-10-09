@@ -7,7 +7,7 @@ with a `SKILL.md` that Claude Code and other Agent Skills clients can load.
 
 | Skill | Description |
 |---|---|
-| [herdr-duo](skills/herdr-duo) | Orchestrates development inside Herdr: delegates to Codex (Luna) and Claude Code (Haiku) in isolated worktrees, with cross-review and verified integration. |
+| [herdr-duo](skills/herdr-duo) | Orchestrates development inside Herdr: delegates to as many Codex (Luna) and Claude Code (Haiku) workers as the task can use in parallel, escalates hard problems to one dedicated Sol or Sonnet session, and keeps isolated worktrees, cross-review and verified integration. |
 
 ## Install
 
@@ -55,6 +55,7 @@ Behaviour:
 - **Herdr**, with `herdr`, `git` and `python3` on `PATH`. The skill's preflight requires `HERDR_ENV=1`, so run it from a Herdr pane.
 - **Codex CLI**, for the Luna implementer and reviewers.
 - **Claude Code CLI**, for the Haiku implementer and reviewers.
+- Sol and Sonnet are used only for escalations. Their model IDs are set with `HERDR_DUO_SOL_MODEL` and `HERDR_DUO_SONNET_MODEL` in `~/.config/herdr-duo/config.env`.
 
 Run `~/.agents/skills/herdr-duo/scripts/preflight.sh` to check these. It is read-only.
 

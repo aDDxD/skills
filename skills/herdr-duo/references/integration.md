@@ -47,13 +47,13 @@ No force push. Never push to the default branch unless the user named it. Merge,
 
 ## Cleanup
 
-For each session this run created that you will not reuse:
+Close a strong session right after its delta is integrated, not at the end of the run. Close reviewers once their report is in. At the end, for each remaining session this run created:
 
 ```bash
 $SKILL_DIR/scripts/cleanup.sh --run $RUN --name <name>
 ```
 
-It closes the pane. It removes the worktree only when the worktree's current delta is empty or identical to what was integrated. Otherwise it refuses (exit 8) and saves the patch. Use `--discard` only after the user agrees to drop that work. Name every refused or kept worktree in the report. Never close panes this run did not create.
+It closes the pane. A worktree still used by a live escalated session is kept until that session is cleaned. It removes the worktree only when the worktree's current delta is empty or identical to what was integrated. Otherwise it refuses (exit 8) and saves the patch. Use `--discard` only after the user agrees to drop that work. Name every refused or kept worktree in the report. Never close panes this run did not create.
 
 Worktree paths are stable per repository and worker name, so a name can be reused once its worktree is gone, and agents keep their folder-trust decision for that path.
 
@@ -64,6 +64,7 @@ Your final message covers:
 - the changed files;
 - every check, with its exit code;
 - the reviews done and any limitation;
+- escalations, with their reason (`status.sh` lists them);
 - the guard result;
 - commit and push status, with the branch name;
 - worktrees kept, and why;
