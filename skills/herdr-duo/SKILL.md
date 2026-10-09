@@ -11,6 +11,10 @@ Shell variables do not survive between tool calls. Use the literal absolute path
 
 ## Start
 
+Start the lead in a Herdr pane. For Codex versions that advertise `--no-daemon` in `codex --help`, launch the lead with `codex --no-daemon`. A shared app-server daemon started outside Herdr may execute commands without the pane's `HERDR_*` environment even when the CLI itself inherited it. `spawn.sh` applies this flag to Codex workers and reviewers when supported.
+
+If preflight reports a missing `HERDR_ENV`, report that the command environment lacks Herdr context and explain how to relaunch the lead. Do not infer that the user's terminal is outside Herdr solely from this failure. Never synthesize `HERDR_ENV=1`, copy another pane's IDs, or use the focused pane as a fallback. If a locally launched Codex still loses the variables, compare `printenv HERDR_ENV HERDR_PANE_ID HERDR_SOCKET_PATH` in the pane shell and in the agent's shell tool, then inspect Codex's shell environment policy.
+
 1. Set `$SKILL_DIR` to this skill's base directory (the directory containing this `SKILL.md`), then run `$SKILL_DIR/scripts/preflight.sh`. It is read-only. If it fails, report the failing line and stop. A warning about one provider means you route its work to the other.
 2. `$SKILL_DIR/scripts/run-init.sh --repo <repo> --goal "<one line>" [--commit] [--push]`. Pass `--commit` or `--push` only if the user's **initial** request explicitly asked for that. The script prints `RUN`, `REPO`, the branch and default branch, uncommitted counts, the repository's instruction files, dependency directories, and stale worktrees.
 3. Read the repository's instruction files that it lists (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, README, manifests). They define the checks and conventions for this repo. Read the base `herdr` skill only if a Herdr command fails or you need one that these scripts do not cover.

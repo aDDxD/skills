@@ -6,7 +6,7 @@ set -u
 
 fail() { echo "PREFLIGHT FAIL: $*" >&2; exit 1; }
 
-[ "${HERDR_ENV:-}" = 1 ] || fail "HERDR_ENV is not 1; this workflow requires a Herdr pane."
+[ "${HERDR_ENV:-}" = 1 ] || fail "HERDR_ENV is not 1 in this command environment. Start the lead inside a Herdr pane; with Codex, use 'codex --no-daemon' if supported. A shared daemon started outside Herdr may not inherit the pane's HERDR_* variables. Do not set HERDR_ENV=1 manually."
 for bin in herdr git python3; do
   command -v "$bin" >/dev/null 2>&1 || fail "$bin not found in PATH."
 done

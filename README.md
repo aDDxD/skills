@@ -58,6 +58,12 @@ Behaviour:
 
 Run `~/.agents/skills/herdr-duo/scripts/preflight.sh` to check these. It is read-only.
 
+When using Codex as the lead, launch it **inside the Herdr pane** with
+`codex --no-daemon` if `codex --help` lists that option. A shared Codex daemon
+started outside Herdr may lack the pane's `HERDR_*` variables. The skill adds
+this option to Codex workers and reviewers when supported. Do not manually
+export `HERDR_ENV=1`: the socket and caller IDs must also come from the pane.
+
 ## Adding a skill
 
 1. Create `skills/<name>/SKILL.md`. The frontmatter needs `name` (matching the folder name) and `description`:

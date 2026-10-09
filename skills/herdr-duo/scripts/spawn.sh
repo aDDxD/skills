@@ -106,6 +106,12 @@ fi
 args=()
 if [ "$provider" = codex ]; then
   args=(-m "$HERDR_DUO_LUNA_MODEL" -c "model_reasoning_effort=$HERDR_DUO_LUNA_EFFORT")
+  # A shared daemon started outside Herdr can lose this pane's environment.
+  # Older Codex releases have no daemon flag and already execute locally.
+  codex_help=$(codex --help 2>&1) || codex_help=""
+  if grep -q -- '--no-daemon' <<<"$codex_help"; then
+    args+=(--no-daemon)
+  fi
   if [ "$role" = reviewer ]; then
     args+=(-s read-only -a never)
   elif [ "$HERDR_DUO_LUNA_ACCESS" = full ]; then
