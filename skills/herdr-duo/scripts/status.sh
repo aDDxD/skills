@@ -26,6 +26,9 @@ lead = json.load(open(os.path.join(run, "lead.json"))) if os.path.exists(os.path
 if lead:
     print(f"lead: {lead['name']} ({lead.get('kind') or '?'}, pane {lead['pane']}, {lead.get('status')})  panel: {lead.get('panel_pane') or 'none'}"
           + (f"  previous: {', '.join(h['name'] + ' (' + h['reason'] + ')' for h in lead.get('history', []))}" if lead.get("history") else ""))
+    me = os.environ.get("HERDR_PANE_ID")
+    if me:
+        print("you are the lead" if me == lead["pane"] else f"you are NOT the lead (your pane is {me}); see SKILL.md, Resume a run")
 prog = json.load(open(os.path.join(run, "progress.json"))) if os.path.exists(os.path.join(run, "progress.json")) else {}
 steps = prog.get("steps", [])
 if steps:

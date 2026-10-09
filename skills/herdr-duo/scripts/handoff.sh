@@ -58,6 +58,10 @@ fi
 if [ "$mode" = adopt ]; then
   me=${HERDR_PANE_ID:-}
   [ -n "$me" ] || die "--adopt must run inside the Herdr pane that becomes the lead"
+  if [ "$me" = "$(json_get "$lj" pane)" ]; then
+    echo "this pane ($me) is already the lead of $run; nothing to adopt"
+    exit 0
+  fi
   kind=$(herdr agent get "$me" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["agent"].get("agent") or "")' 2>/dev/null || true)
   lead_update '
 lead.setdefault("history", []).append({k: lead.get(k) for k in ("name", "pane", "kind")} | {"ended_at": now, "reason": "adopted by another pane"})

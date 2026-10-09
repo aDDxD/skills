@@ -13,7 +13,8 @@ HANDOFF_PCT = int(os.environ.get("HERDR_DUO_LEAD_HANDOFF_PCT", "2"))
 # Backup signal for limits the 5h figure does not show (weekly limits). Only the
 # bottom of the lead's screen is searched, so a conversation about limits does not match.
 LIMIT_RE = re.compile(os.environ.get("HERDR_DUO_LIMIT_REGEX",
-    r"(?i)(hit your (usage )?limit|usage limit reached|limit reached.{0,40}reset|out of (usage|credits)|rate limit exceeded)"))
+    r"(?i)(hit your (usage )?limit|usage limit reached|reached your (\w+ )?usage limit|limit reached.{0,40}reset|"
+    r"out of (usage|credits)|rate limit exceeded)"))
 
 events, cache = [], {}
 out_ticks = 0
@@ -89,9 +90,12 @@ def watchdog(lead, agents):
         sh(os.path.join(HERE, "handoff.sh"), "--run", RUN, "--deliver", timeout=30)
         return f"successor {lead['name']} starting in pane {lead['pane']} (answer its dialog there if one shows)"
     a = agents.get(lead["pane"])
+    screen = "\n".join(sh("herdr", "pane", "read", lead["pane"], "--source", "visible").splitlines()[-15:]) if a else ""
+    hit = LIMIT_RE.search(screen)
     if status == "stranded":
         left = remaining(a)
-        if left is None or left <= WARN_PCT:
+        # A weekly limit leaves the 5h figure high, so the limit message must be gone too.
+        if left is None or left <= WARN_PCT or hit:
             return "NO LEAD: every provider ran out of quota. Resume manually later (SKILL.md, Resume a run)"
         lead["status"] = "active"  # the lead's quota has reset; watch it again
         with open(os.path.join(RUN, "lead.json.tmp"), "w") as f:
@@ -108,8 +112,6 @@ def watchdog(lead, agents):
         event(f"warned {lead['name']}: {left}% quota left")
     elif left is not None and left > WARN_PCT + 5 and os.path.exists(warn):
         os.remove(warn)
-    screen = "\n".join(sh("herdr", "pane", "read", lead["pane"], "--source", "visible").splitlines()[-15:])
-    hit = LIMIT_RE.search(screen)
     out = a.get("agent_status") != "working" and ((left is not None and left <= HANDOFF_PCT) or hit)
     out_ticks = out_ticks + 1 if out else 0
     if out_ticks >= 2:

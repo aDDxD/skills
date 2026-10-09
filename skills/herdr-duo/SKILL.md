@@ -42,7 +42,7 @@ If preflight reports a missing `HERDR_ENV`, report that the command environment 
 
 - **Base workers scale with the plan's real parallelism.** Spawn one Luna or Haiku per independent task that has its own files, a clear acceptance check, and enough substance to pay for a fresh session (a new session costs about 16k tokens before any work). Use zero workers for work you can verify directly, and one for strictly sequential work. Three tiny edits are one task, not three workers.
 - Do not spawn workers whose tasks would wait on each other or share a file; sequence those through one worker instead. When tasks outnumber good parallel slots, run waves: integrate a worker's delta, then give it the next task with a new assignment (its baseline has advanced).
-- Mix providers so cross-review stays possible. `spawn.sh` places panes for you: it splits the largest pane the run owns along its longer side and opens a new tab ("duo 2", ...) when no pane has room (`HERDR_DUO_MIN_PANE_COLS`, default 70, and `HERDR_DUO_MIN_PANE_ROWS`, default 18). It never splits your pane or panes the run did not create.
+- Mix providers so cross-review stays possible. `spawn.sh` places panes for you: it splits the largest pane the run owns along its longer side and opens a new tab ("<repo> 2", ...) when no pane has room (`HERDR_DUO_MIN_PANE_COLS`, default 70, and `HERDR_DUO_MIN_PANE_ROWS`, default 18). It never splits your pane or panes the run did not create.
 - **Strong sessions never scale horizontally.** At most one Sol or Sonnet session is live per run; `spawn.sh` and `escalate.sh` refuse a second. Plan a task as strong from the start only when it needs cross-cutting reasoning that cheap models get wrong, for example a financial rule spread over several files. Otherwise strong sessions come only from escalation (below).
 - **Reviewers** are read-only and on demand, as set out in `references/review.md`. Close them once their report is in.
 - Reuse live base sessions for follow-ups (`dispatch.sh --message`) and fix rounds (`dispatch.sh --fix`). Close sessions you will not reuse.
@@ -87,8 +87,8 @@ Write a `note` at each milestone: a plan decision, an integration, a wave finish
 
 When you were started to resume a run (a handoff prompt, or the user asks after compaction or a stop):
 
-1. Run `preflight.sh`. If your pane is not the recorded lead and the user asked you to take over, run `handoff.sh --run $RUN --adopt`.
-2. Run `status.sh --run $RUN`, and read `$RUN/handoff.md` and the `progress.json` checklist. Together with `state.json` they are the whole run; do not re-plan finished steps, and never spawn duplicates of live workers.
+1. Run `preflight.sh`, then `status.sh --run $RUN`. A handoff successor is already the lead (`you are the lead`). Only if it says `you are NOT the lead` and the user asked you to take over, run `handoff.sh --run $RUN --adopt`.
+2. Read `$RUN/handoff.md` and the `progress.json` checklist. Together with `state.json` they are the whole run; do not re-plan finished steps, and never spawn duplicates of live workers.
 3. Run `guard.sh verify --run $RUN`.
 4. A worker shown as `dispatched` may still be working for the previous lead. Collect it with `dispatch.sh --run $RUN --name <name> --collect` in the background: it sends nothing, waits, and prints the report.
 5. If the last note says `waiting for user`, ask the user that question first. Otherwise continue from the active step. Write a `progress.sh note` that you took over.

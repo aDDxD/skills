@@ -21,6 +21,11 @@ def extract(transcript: str) -> str:
         return ""
     block = lines[starts[-1]:starts[-1] + 40]
     block[0] = clean(block[0])  # only the STATUS line loses its marker; later lines keep their bullets
+    # The block ends at the first blank line after FINDINGS; what follows is the agent's UI.
+    for i, line in enumerate(block):
+        if clean(line).startswith("FINDINGS:"):
+            end = next((j for j in range(i + 1, len(block)) if not block[j].strip()), len(block))
+            return "\n".join(block[:end])
     return "\n".join(block)
 
 

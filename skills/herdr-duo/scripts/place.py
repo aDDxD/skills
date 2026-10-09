@@ -5,7 +5,7 @@ Splits the largest pane this run owns (workers, reviewers, and the status panel 
 lead's tab) along its longer side, so panes stay balanced instead of piling up next to
 the lead. A split is allowed only when both halves stay at least MIN_COLS x MIN_ROWS
 (the panel keeps PANEL_ROWS). The lead's pane and panes the run does not own are never
-split. When nothing fits, it opens a new tab ("duo 2", "duo 3", ...) for further sessions.
+split. When nothing fits, it opens a new tab ("<repo> 2", "<repo> 3", ...) for further sessions.
 
 Usage: place.py RUN_DIR CWD"""
 import fcntl, json, os, subprocess, sys
@@ -79,7 +79,7 @@ def main():
             return
 
     # No room left in any tab: open a new one. Its first pane is used as is.
-    label = f"duo {len(state.get('tabs', [])) + 2}"
+    label = f"{os.path.basename(state.get('repo', 'duo'))} {len(state.get('tabs', [])) + 2}"
     res = herdr("tab", "create", "--label", label, "--cwd", cwd, "--no-focus")
     tab = res["tab"]["tab_id"]
     path = os.path.join(run, "state.json")
