@@ -21,6 +21,22 @@ import json, os, sys
 s = json.load(open(sys.argv[1]))
 print(f"goal: {s.get('goal') or '-'}")
 print(f"repo: {s['repo']}  commit_authorized={s.get('commit_authorized')} push_authorized={s.get('push_authorized')}")
+run = os.path.dirname(sys.argv[1])
+lead = json.load(open(os.path.join(run, "lead.json"))) if os.path.exists(os.path.join(run, "lead.json")) else {}
+if lead:
+    print(f"lead: {lead['name']} ({lead.get('kind') or '?'}, pane {lead['pane']}, {lead.get('status')})  panel: {lead.get('panel_pane') or 'none'}"
+          + (f"  previous: {', '.join(h['name'] + ' (' + h['reason'] + ')' for h in lead.get('history', []))}" if lead.get("history") else ""))
+prog = json.load(open(os.path.join(run, "progress.json"))) if os.path.exists(os.path.join(run, "progress.json")) else {}
+steps = prog.get("steps", [])
+if steps:
+    print(f"progress: {sum(1 for x in steps if x['status'] == 'done')}/{len(steps)} done; now: {prog.get('now') or '-'}")
+    for i, x in enumerate(steps, 1):
+        if x["status"] != "done":
+            print(f"  {i}. [{x['status']}] {x['title']}")
+for c in prog.get("checks", [])[-4:]:
+    print(f"check: {c['label']} exit={c['rc']} {c['summary']} ({c['at']})")
+if os.path.exists(os.path.join(run, "handoff.md")):
+    print(f"handoff notes: {os.path.join(run, 'handoff.md')}")
 recs = [r for k in ("workers", "reviewers") for r in s.get(k, [])]
 live = [r for r in recs if r.get("status") not in ("cleaned", "escalated")]
 print(f"sessions: {len(live)} live, {len(recs) - len(live)} closed")
@@ -43,6 +59,7 @@ for r in live:
     elif st in ("settled_no_report", "timeout_or_stalled"): todo.append(f"{r['name']}: {st}, see references/recovery.md")
     elif st == "settled" and r.get("tier") == "strong": todo.append(f"{r['name']}: strong session settled; integrate and clean it up now")
     elif st == "settled" and r["role"] == "reviewer": todo.append(f"{r['name']}: reviewer settled; close it unless a follow-up round is planned")
+    elif st == "dispatched": todo.append(f"{r['name']}: dispatched; if no dispatch of yours is waiting on it, collect it: dispatch.sh --collect")
 for t in todo:
     print("todo: " + t)
 PY

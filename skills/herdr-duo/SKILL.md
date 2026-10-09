@@ -16,7 +16,7 @@ Start the lead in a Herdr pane. For Codex versions that advertise `--no-daemon` 
 If preflight reports a missing `HERDR_ENV`, report that the command environment lacks Herdr context and explain how to relaunch the lead. Do not infer that the user's terminal is outside Herdr solely from this failure. Never synthesize `HERDR_ENV=1`, copy another pane's IDs, or use the focused pane as a fallback. If a locally launched Codex still loses the variables, compare `printenv HERDR_ENV HERDR_PANE_ID HERDR_SOCKET_PATH` in the pane shell and in the agent's shell tool, then inspect Codex's shell environment policy.
 
 1. Set `$SKILL_DIR` to this skill's base directory (the directory containing this `SKILL.md`), then run `$SKILL_DIR/scripts/preflight.sh`. It is read-only. If it fails, report the failing line and stop. A warning about one provider means you route its work to the other.
-2. `$SKILL_DIR/scripts/run-init.sh --repo <repo> --goal "<one line>" [--commit] [--push]`. Pass `--commit` or `--push` only if the user's **initial** request explicitly asked for that. The script prints `RUN`, `REPO`, the branch and default branch, uncommitted counts, the repository's instruction files, dependency directories, and stale worktrees.
+2. `$SKILL_DIR/scripts/run-init.sh --repo <repo> --goal "<one line>" [--commit] [--push]`. Pass `--commit` or `--push` only if the user's **initial** request explicitly asked for that. The script prints `RUN`, `REPO`, the branch and default branch, uncommitted counts, the repository's instruction files, dependency directories, and stale worktrees. It also records your pane as the run's lead and opens the **status panel** to the right of it (see "Panel and lead handoff"). Pass `--no-panel` only if the user asked for no panel.
 3. Read the repository's instruction files that it lists (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, README, manifests). They define the checks and conventions for this repo. Read the base `herdr` skill only if a Herdr command fails or you need one that these scripts do not cover.
 
 ## Authorization
@@ -64,9 +64,38 @@ $SKILL_DIR/scripts/escalate.sh --run $RUN --name <worker> --reason "<what failed
 
 It saves the failed attempt as a patch, closes the base session, and starts a new, dedicated strong session in the same worktree (by default from the other provider, a different model family). Write its assignment from the escalation template in `references/assignments.md`: only the failing problem, narrowly scoped. Dispatch it, review it like any change (the reviewer is the other provider), integrate it, and close it with `cleanup.sh` right away, so it does not stay live and use up quota. A strong session gets at most one fix round. If it still fails, stop and report the blocker; there is no further escalation.
 
+## Panel and lead handoff
+
+The panel is a script, not an agent: it uses no quota. It shows your checklist, what you are doing now, every session, the quota left per provider, the last checks, git and CI. It also watches your own quota:
+
+- At `HERDR_DUO_LEAD_WARN_PCT` (default 10%) of your 5h quota left, scripts you run print **LEAD QUOTA LOW**. Then write a `progress.sh note` with your next steps, and pass the lead at a safe point (not in the middle of an integration): `handoff.sh --run $RUN --reason "quota low"`. After a handoff you are no longer the lead: stop, and do nothing more in this run.
+- If you run out while idle (at most `HERDR_DUO_LEAD_HANDOFF_PCT` left, or a limit message on your screen), the panel hands off by itself. The successor is a fresh session of the other provider: Sol if you are Claude, Sonnet if you are Codex (`HERDR_DUO_LEAD_FALLBACK=auto|codex|claude|off`). It opens below your pane and resumes the run. A provider that already ran out in this run is not tried again for 5 hours; then the run waits for the user.
+- Your pane is never typed into. A lead fence keeps an old lead from acting: every script that changes the run refuses any pane but the current lead.
+
+The handoff is only as good as what you record. Keep the panel and the successor informed with `progress.sh`; each call costs one short command:
+
+```bash
+$SKILL_DIR/scripts/progress.sh --run $RUN plan "<step 1>" "<step 2>" ...   # once, after planning; again if the plan changes
+$SKILL_DIR/scripts/progress.sh --run $RUN step <n> active|done|failed
+$SKILL_DIR/scripts/progress.sh --run $RUN check "<label>" <exit code> "<summary, e.g. 256/268 passed>"
+$SKILL_DIR/scripts/progress.sh --run $RUN note "<decision or next step a successor must know>"
+```
+
+Write a `note` at each milestone: a plan decision, an integration, a wave finished, a dispatch you are about to wait on. Write steps in the user's language.
+
+### Resume a run
+
+When you were started to resume a run (a handoff prompt, or the user asks after compaction or a stop):
+
+1. Run `preflight.sh`. If your pane is not the recorded lead and the user asked you to take over, run `handoff.sh --run $RUN --adopt`.
+2. Run `status.sh --run $RUN`, and read `$RUN/handoff.md` and the `progress.json` checklist. Together with `state.json` they are the whole run; do not re-plan finished steps, and never spawn duplicates of live workers.
+3. Run `guard.sh verify --run $RUN`.
+4. A worker shown as `dispatched` may still be working for the previous lead. Collect it with `dispatch.sh --run $RUN --name <name> --collect` in the background: it sends nothing, waits, and prints the report.
+5. Continue from the active step. Write a `progress.sh note` that you took over.
+
 ## Workflow
 
-1. **Plan.** Write acceptance criteria, dependencies and file ownership per task. Each file has one writer. Shared contracts, lockfiles, schemas and generated files get exactly one writer.
+1. **Plan.** Write acceptance criteria, dependencies and file ownership per task. Each file has one writer. Shared contracts, lockfiles, schemas and generated files get exactly one writer. Record the steps with `progress.sh plan`.
 2. **Spawn** each implementer: `$SKILL_DIR/scripts/spawn.sh --run $RUN --name luna --provider codex --role implementer --deps-auto`. Then the others, with `--split-from <an existing worker pane> --direction down|right` so the panes do not get too narrow. Give each worker a short task-based name (`luna-api`, `haiku-docs`). Workers start from your current checkout, including uncommitted work; secret-looking files are skipped. Use `--from-head` to start from HEAD only. If spawn reports **STARTUP DIALOG**, see `references/recovery.md`.
 3. **Guard:** `$SKILL_DIR/scripts/guard.sh snapshot --run $RUN`.
 4. **Assign.** Write `$RUN/<name>/assignment.md` from `references/assignments.md`.
@@ -84,7 +113,8 @@ It saves the failed attempt as a patch, closes the base session, and starts a ne
 - **No team state in the repository.** Team state lives under `$RUN`, never in tracked files.
 
 - **One strong session at a time, closed when done.** Sol and Sonnet are expensive; they work one narrow problem and close.
+- **One lead per run.** Only the pane in `lead.json` acts on the run. After a handoff, the previous lead stops.
 
 `$SKILL_DIR/scripts/status.sh --run $RUN` prints every session with its tier, status and fix rounds, the live strong session, the escalations, and what still needs a decision. Use it instead of reading `state.json`.
 
-References: `assignments.md` (assignment, escalation and reviewer templates), `review.md` (risk tiers, cross-review, the third reviewer), `integration.md` (integrate, validate, commit, push, cleanup, report), `recovery.md` (dialogs, blocked or stalled sessions, guard violations, quota, compaction).
+References: `assignments.md` (assignment, escalation and reviewer templates), `review.md` (risk tiers, cross-review, the third reviewer), `integration.md` (integrate, validate, commit, push, cleanup, report), `recovery.md` (dialogs, blocked or stalled sessions, guard violations, quota, panel and handoff, compaction).

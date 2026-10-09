@@ -3,18 +3,21 @@
 # state.json outside the repository, then prints the facts the lead needs as
 # literal absolute paths (shell variables do not survive between tool calls).
 #
-# Usage: run-init.sh --repo DIR [--goal TEXT] [--commit] [--push]
+# Usage: run-init.sh --repo DIR [--goal TEXT] [--commit] [--push] [--no-panel]
 #   --commit / --push only when the user's initial request explicitly asked for them.
+# Inside Herdr it also records the calling pane as the run's lead (lead.json) and opens
+# the status panel with the lead watchdog in a pane to the right of the lead.
 set -euo pipefail
 . "$(dirname "$(realpath "$0")")/common.sh"
 
-repo=""; goal=""; commit=false; push=false
+repo=""; goal=""; commit=false; push=false; panel=yes
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo=$2; shift 2 ;;
     --goal) goal=$2; shift 2 ;;
     --commit) commit=true; shift ;;
     --push) push=true; shift ;;
+    --no-panel) panel=no; shift ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -86,6 +89,31 @@ deps_candidates:${deps:- none}  (pass --deps-auto to copy them)
 stale_worktrees_in_WT_ROOT:${stale:- none}  (integrate or remove before reusing a name)
 access: luna=$HERDR_DUO_LUNA_ACCESS ($HERDR_DUO_LUNA_MODEL, effort $HERDR_DUO_LUNA_EFFORT)  haiku=$HERDR_DUO_HAIKU_MODE ($HERDR_DUO_HAIKU_MODEL)
 EOF
+
+# The lead is the pane that started the run; the panel and handoff build on this record.
+if [ -n "${HERDR_PANE_ID:-}" ]; then
+  lead_kind=$(herdr agent get "$HERDR_PANE_ID" 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["agent"].get("agent") or "")' 2>/dev/null || true)
+  panel_pane=""
+  if [ "$panel" = yes ]; then
+    script_dir=$(dirname "$(realpath "$0")")
+    if [[ "$script_dir$run" =~ ^[A-Za-z0-9_./,=:@+-]+$ ]] \
+      && split_out=$(herdr pane split "$HERDR_PANE_ID" --direction right --cwd "$repo" --no-focus 2>/dev/null); then
+      panel_pane=$(printf %s "$split_out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])' 2>/dev/null || true)
+      [ -z "$panel_pane" ] || {
+        herdr pane rename "$panel_pane" "herdr-duo panel" >/dev/null 2>&1 || true
+        herdr pane run "$panel_pane" "$script_dir/panel.sh --run $run" >/dev/null 2>&1 || true
+      }
+    fi
+  fi
+  python3 - "$run/lead.json" "$HERDR_PANE_ID" "$lead_kind" "$panel_pane" <<'PY'
+import json, sys
+path, pane, kind, panel = sys.argv[1:]
+json.dump({"name": "lead1", "pane": pane, "kind": kind or None, "generation": 1, "status": "active",
+           "panel_pane": panel or None}, open(path, "w"), indent=2)
+PY
+  echo "lead: pane $HERDR_PANE_ID (${lead_kind:-unknown provider})  panel: ${panel_pane:-not started}  handoff: $HERDR_DUO_LEAD_FALLBACK"
+fi
 
 # Hint for a failed origin check. Never prints the URL itself, so no credentials leak.
 push_hint() {

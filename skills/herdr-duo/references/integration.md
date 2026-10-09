@@ -18,7 +18,7 @@ $SKILL_DIR/scripts/integrate.sh --state $RUN/<name> --patch $RUN/<name>/delta.pa
 
 ## Validate
 
-Run this repository's checks yourself, in the user's checkout, after integration. Take them from its instruction files and manifests, as `run-init.sh` listed them. Escalate by risk: targeted tests first, then the broader gates the repository defines. This is also where suites that bind ports or use shared services run, once.
+Run this repository's checks yourself, in the user's checkout, after integration. Record each result with `progress.sh check` so the panel and a successor lead see it. Take them from its instruction files and manifests, as `run-init.sh` listed them. Escalate by risk: targeted tests first, then the broader gates the repository defines. This is also where suites that bind ports or use shared services run, once.
 
 Record every command with its exit code. A check you did not run is "not run", never "passed". If a check fails, send the failure to the owner of the file as a fix round. Do not hand-edit around it.
 
@@ -55,6 +55,12 @@ $SKILL_DIR/scripts/cleanup.sh --run $RUN --name <name>
 
 It closes the pane. A worktree still used by a live escalated session is kept until that session is cleaned. It removes the worktree only when the worktree's current delta is empty or identical to what was integrated. Otherwise it refuses (exit 8) and saves the patch. Use `--discard` only after the user agrees to drop that work. Name every refused or kept worktree in the report. Never close panes this run did not create.
 
+When the run is complete, close the status panel and mark the run finished:
+
+```bash
+$SKILL_DIR/scripts/cleanup.sh --run $RUN --finish
+```
+
 Worktree paths are stable per repository and worker name, so a name can be reused once its worktree is gone, and agents keep their folder-trust decision for that path.
 
 ## Report
@@ -64,7 +70,7 @@ Your final message covers:
 - the changed files;
 - every check, with its exit code;
 - the reviews done and any limitation;
-- escalations, with their reason (`status.sh` lists them);
+- escalations, with their reason, and lead handoffs (`status.sh` lists both);
 - the guard result;
 - commit and push status, with the branch name;
 - worktrees kept, and why;

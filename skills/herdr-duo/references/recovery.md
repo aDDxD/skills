@@ -55,9 +55,17 @@ Fixes, for the user to choose. Do not apply either one yourself, because both ch
 
 After the user applies a fix, rerun `run-init.sh --push` to confirm `push_check: ok`. Do not retry the push in a loop.
 
+## Panel and lead handoff
+
+- **Panel pane closed by accident:** split a pane and restart it: `herdr pane run <pane> "$SKILL_DIR/scripts/panel.sh --run $RUN"`. Without the panel there is no automatic handoff.
+- **A script says "this pane is no longer the lead":** a handoff happened. Stop and do nothing more in this run. If the user wants this pane to lead again, they ask for it, and you run `handoff.sh --run $RUN --adopt`.
+- **The successor shows a startup dialog:** the panel shows it and waits. The user answers it in the successor's pane; the panel then delivers the resume prompt.
+- **NO LEAD / stranded:** every provider ran out of quota. The run waits with its state intact. When a quota resets, the panel marks the lead active again; or the user opens any lead and asks it to resume the run (SKILL.md, Resume a run).
+- **handoff.lock left behind:** a handoff was interrupted. Check `lead.json` and `herdr agent list`, then remove `$RUN/handoff.lock`.
+
 ## Context compaction
 
-Rebuild your picture from these, and do not start duplicate workers because conversation context is missing:
+Follow "Resume a run" in SKILL.md. Rebuild your picture from these, and do not start duplicate workers because conversation context is missing:
 
 - `status.sh --run $RUN`: sessions, tiers, status, fix rounds, escalations, open decisions;
 - `$RUN/<name>/baseline.json` and the delta files;

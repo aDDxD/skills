@@ -30,6 +30,7 @@ while [ $# -gt 0 ]; do
 done
 [ -f "$run/state.json" ] || die "no state.json in '$run'"
 run=$(realpath "$run")
+require_lead "$run"
 [ -n "$name" ] && [ -n "$reason" ] || die "--name and --reason are required"
 
 role=$(record_get "$run" "$name" role)

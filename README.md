@@ -56,6 +56,7 @@ Behaviour:
 - **Codex CLI**, for the Luna implementer and reviewers.
 - **Claude Code CLI**, for the Haiku implementer and reviewers.
 - Sol and Sonnet are used only for escalations. Their model IDs are set with `HERDR_DUO_SOL_MODEL` and `HERDR_DUO_SONNET_MODEL` in `~/.config/herdr-duo/config.env`.
+- Each run opens a status panel next to the lead. It also watches the lead's quota and, when the lead runs out, hands the run to a fresh lead of the other provider (Sol or Sonnet). Set `HERDR_DUO_LEAD_FALLBACK=off` in the same file to only warn.
 
 Run `~/.agents/skills/herdr-duo/scripts/preflight.sh` to check these. It is read-only.
 

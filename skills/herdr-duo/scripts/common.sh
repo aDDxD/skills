@@ -16,6 +16,15 @@ HERDR_DUO_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/herdr-duo/config.env"
 : "${HERDR_DUO_SOL_MODEL:=gpt-6.1-sol}"
 : "${HERDR_DUO_SOL_EFFORT:=high}"
 : "${HERDR_DUO_SONNET_MODEL:=claude-sonnet-5-5}"
+# Lead handoff: auto = pass to the other provider when the lead runs out of quota;
+# codex|claude = always pass to that provider; off = the panel only warns.
+: "${HERDR_DUO_LEAD_FALLBACK:=auto}"
+: "${HERDR_DUO_LEAD_CODEX_MODEL:=$HERDR_DUO_SOL_MODEL}"
+: "${HERDR_DUO_LEAD_CODEX_EFFORT:=$HERDR_DUO_SOL_EFFORT}"
+: "${HERDR_DUO_LEAD_CLAUDE_MODEL:=$HERDR_DUO_SONNET_MODEL}"
+: "${HERDR_DUO_LEAD_WARN_PCT:=10}"      # 5h quota left (%) at which the lead is told to prepare
+: "${HERDR_DUO_LEAD_HANDOFF_PCT:=2}"    # 5h quota left (%) at which an idle lead counts as out
+: "${HERDR_DUO_PANEL_INTERVAL:=5}"      # panel refresh, seconds
 : "${HERDR_DUO_STATE_ROOT:=${XDG_STATE_HOME:-$HOME/.local/state}/herdr-duo}"
 # Ignored dependency directories that --deps-auto may copy into worktrees.
 : "${HERDR_DUO_DEPS_NAMES:=node_modules .venv venv vendor}"
@@ -139,4 +148,22 @@ for k in ("workers", "reviewers"):
         if r.get("name") == name:
             r[key] = value
 ' "$2" "$3" "$4"
+}
+
+# Lead fence. A run has exactly one lead, recorded in RUN_DIR/lead.json. After a
+# handoff the previous lead may wake up again (its quota resets); every script that
+# changes the run refuses to act for any pane but the current lead and the panel.
+require_lead() {
+  local lj="$1/lead.json" me=${HERDR_PANE_ID:-} lead panel
+  [ -f "$lj" ] && [ -n "$me" ] || return 0
+  lead=$(json_get "$lj" pane); panel=$(json_get "$lj" panel_pane)
+  [ "$me" = "$lead" ] || [ "$me" = "$panel" ] \
+    || die "this pane ($me) is no longer the lead of this run; the lead is $lead ($(json_get "$lj" name)). Stop and do not act on this run."
+}
+
+# Prints the panel's low-quota warning for the lead, if the panel raised one.
+lead_warning() {
+  [ -f "$1/lead.warning" ] || return 0
+  echo "LEAD QUOTA LOW: $(cat "$1/lead.warning")"
+  echo "  Record your next steps now (progress.sh note), then pass the lead at a safe point: handoff.sh --run $1 --reason \"quota low\""
 }

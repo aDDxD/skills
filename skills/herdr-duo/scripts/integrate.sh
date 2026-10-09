@@ -24,6 +24,7 @@ state=$(realpath -m "$state")
 patch=$(realpath "$patch")
 bj="$state/baseline.json"
 [ -f "$bj" ] || die "no baseline.json in $state"
+require_lead "$(dirname "$state")"
 [ -s "$patch" ] || { echo "patch is empty: nothing to integrate"; exit 0; }
 
 repo=$(json_get "$bj" repo)

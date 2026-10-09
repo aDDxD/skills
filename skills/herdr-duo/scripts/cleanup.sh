@@ -4,23 +4,35 @@
 # --discard removes it anyway; use it only when the user agreed to drop that work.
 #
 # Usage: cleanup.sh --run DIR --name NAME [--discard] [--keep-pane]
+#        cleanup.sh --run DIR --finish    mark the run finished and close the status panel
 # Exit: 0 cleaned, 8 refused because the worktree holds unintegrated work.
 set -euo pipefail
 here=$(dirname "$(realpath "$0")")
 . "$here/common.sh"
 
-run=""; name=""; discard=no; keep_pane=no
+run=""; name=""; discard=no; keep_pane=no; finish=no
 while [ $# -gt 0 ]; do
   case "$1" in
     --run) run=$2; shift 2 ;;
     --name) name=$2; shift 2 ;;
     --discard) discard=yes; shift ;;
     --keep-pane) keep_pane=yes; shift ;;
+    --finish) finish=yes; shift ;;
     *) die "unknown argument: $1" ;;
   esac
 done
 [ -f "$run/state.json" ] || die "no state.json in '$run'"
 run=$(realpath "$run")
+require_lead "$run"
+if [ "$finish" = yes ]; then
+  state_edit "$run" 'state["status"] = "finished"'
+  panel=$( [ -f "$run/lead.json" ] && json_get "$run/lead.json" panel_pane || true)
+  if [ -n "$panel" ]; then
+    herdr pane close "$panel" >/dev/null 2>&1 && echo "closed panel $panel" || echo "panel $panel already gone"
+  fi
+  echo "run marked finished"
+  exit 0
+fi
 
 read -r role pane wt sdir sharers < <(python3 -c '
 import json, sys

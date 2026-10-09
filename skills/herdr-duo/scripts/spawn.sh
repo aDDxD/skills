@@ -51,6 +51,7 @@ while [ $# -gt 0 ]; do
 done
 [ -f "$run/state.json" ] || die "no state.json in '$run'; run run-init.sh first"
 run=$(realpath "$run")
+require_lead "$run"
 [[ "$name" =~ ^[a-z][a-z0-9_-]{0,31}$ ]] || die "invalid agent name '$name' (must match [a-z][a-z0-9_-]{0,31})"
 
 set_record_status() { set_field "$run" "$name" status "$1"; }
