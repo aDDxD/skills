@@ -42,12 +42,21 @@ If preflight reports a missing `HERDR_ENV`, report that the command environment 
 
 - **Base workers scale with the plan's real parallelism.** Spawn one Luna or Haiku per independent task that has its own files, a clear acceptance check, and enough substance to pay for a fresh session (a new session costs about 16k tokens before any work). Use zero workers for work you can verify directly, and one for strictly sequential work. Three tiny edits are one task, not three workers.
 - Do not spawn workers whose tasks would wait on each other or share a file; sequence those through one worker instead. When tasks outnumber good parallel slots, run waves: integrate a worker's delta, then give it the next task with a new assignment (its baseline has advanced).
-- Mix providers so cross-review stays possible. `spawn.sh` places panes for you: it splits the largest pane the run owns along its longer side and opens a new tab ("<repo> 2", ...) when no pane has room (`HERDR_DUO_MIN_PANE_COLS`, default 70, and `HERDR_DUO_MIN_PANE_ROWS`, default 18). It never splits your pane or panes the run did not create.
+- Balance providers by their current 5h quota as described below, keeping the other provider available for cross-review; a fixed 50/50 worker split is not required. `spawn.sh` places panes for you: it splits the largest pane the run owns along its longer side and opens a new tab ("<repo> 2", ...) when no pane has room (`HERDR_DUO_MIN_PANE_COLS`, default 70, and `HERDR_DUO_MIN_PANE_ROWS`, default 18). It never splits your pane or panes the run did not create.
 - **Strong workers/reviewers never scale horizontally.** At most one strong worker or reviewer session is live per run; `spawn.sh` and `escalate.sh` refuse a second. The lead has its own model choice and does not occupy this slot. Plan a task as strong from the start only when it needs cross-cutting reasoning that cheap models get wrong, for example a financial rule spread over several files. Otherwise strong sessions come only from escalation (below).
 - **Reviewers** are read-only and on demand, as set out in `references/review.md`. Close them once their report is in.
 - Reuse live base sessions for follow-ups (`dispatch.sh --message`) and fix rounds (`dispatch.sh --fix`). Close sessions you will not reuse.
-- Route localized, mechanical, test and doc work to Haiku. Route multi-file logic with invariants, and debugging with an unclear root cause, to Luna. A change is reviewed by the provider that did not write it. If a provider is unavailable or rate-limited, send its work to the other.
+- Apply the quota policy below first. When current 5h headroom is similar or unknown, prefer Haiku for localized, mechanical, test and doc work, and Luna for multi-file logic with invariants or debugging with an unclear root cause. A change is reviewed by the provider that did not write it. If a provider is unavailable or rate-limited, send its work to the other.
 - Do not implement routine work yourself. If the workers and the escalation fail, finish the deterministic checks and report the blocker.
+
+### Balancing provider quota
+
+The lead balances workers using **only the remaining quota in each provider's current 5-hour window**. Never use weekly quota, weekly reset times or a weekly consumption target to choose a provider, reserve capacity or throttle workers. The goal is to balance consumption of the current windows and extend useful session time as far as possible.
+
+- Before allocating workers and at each new wave, compare the latest available 5h remaining percentages shown by the panel or Herdr usage data. If Codex has more headroom, favor Codex workers (Luna, or Sol when strong-tier rules permit); if Claude has more, favor Claude workers (Haiku, or Sonnet when permitted). Reassess as the windows are consumed or reset.
+- Quota preference takes precedence over the task-type defaults above, but does not justify extra workers, strong-tier escalation, changing the lead's model or skipping required cross-review. Allocate useful work to the provider with more headroom; do not manufacture work to equalize percentages.
+- Apply changes to new assignments at safe task boundaries. Reuse suitable live sessions and let in-flight work finish rather than restarting it merely to rebalance. If either 5h value is unknown, do not substitute weekly data or invent a value; use task fit and available sessions until current-window data is available.
+- An actual usage-limit error still makes a provider unavailable, whatever its cause. Follow `references/recovery.md`; this is failure recovery, not weekly-quota planning.
 
 ### Escalation to Sol or Sonnet
 
