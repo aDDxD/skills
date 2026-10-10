@@ -81,17 +81,30 @@ $SKILL_DIR/scripts/progress.sh --run $RUN check "<label>" <exit code> "<summary,
 $SKILL_DIR/scripts/progress.sh --run $RUN note "<decision or next step a successor must know>"
 ```
 
-Write a `note` at each milestone: a plan decision, an integration, a wave finished, a dispatch you are about to wait on. Before you ask the user a question, note it as `waiting for user: <question>`, so a successor asks again instead of guessing. Write steps in the user's language.
+Write a `note` at each milestone: a plan decision, an integration, a wave finished, a dispatch you are about to wait on. Record a genuinely required unanswered decision as `waiting for user: <question>` with the reason it blocks work. Optional questions and already authorized actions must not become blockers; record the chosen assumption or existing authorization instead. Write steps in the user's language.
 
 ### Resume a run
 
 When you were started to resume a run (a handoff prompt, or the user asks after compaction or a stop):
 
 1. Run `preflight.sh`, then `status.sh --run $RUN`. A handoff successor is already the lead (`you are the lead`). Only if it says `you are NOT the lead` and the user asked you to take over, run `handoff.sh --run $RUN --adopt`.
-2. Read `$RUN/handoff.md` and the `progress.json` checklist. Together with `state.json` they are the whole run; do not re-plan finished steps, and never spawn duplicates of live workers.
+2. Read `$RUN/handoff.md`, `progress.json`, `state.json` and `$RUN/goal.json` if present. The successor inherits the original task, user constraints and recorded authorization, including commit/push permissions; a handoff is a continuation, not a new approval request. These files are the durable run context; do not re-plan finished steps, and never spawn duplicates of live workers.
 3. Run `guard.sh verify --run $RUN`.
-4. A worker shown as `dispatched` may still be working for the previous lead. Collect it with `dispatch.sh --run $RUN --name <name> --collect` in the background: it sends nothing, waits, and prints the report.
-5. If the last note says `waiting for user`, ask the user that question first. Otherwise continue from the active step. Write a `progress.sh note` that you took over.
+4. Inspect every owned live worker pane and its assignment/report, including workers marked settled when a follow-up may still be running. Existing terminal processes belong to the run, not to the previous lead session. Reattach dispatched work with `dispatch.sh --run $RUN --name <name> --collect` in the background: it sends nothing, waits, and prints the report. Old shell-tool session IDs are not transferable; use durable files and Herdr pane state to recover their outcome. Never restart a suite, resend an assignment or spawn a replacement before checking the existing process.
+5. Reconcile any `waiting for user` note against the latest request and existing authorization. Only a still-required missing decision or actual approval dialog blocks dependent work; continue independent work. Otherwise write a takeover note and immediately execute the next unfinished action. A status update or background dispatch is not the end of the task: collect results, resolve findings, validate, integrate and perform authorized delivery/cleanup until the acceptance criteria are met. Do not end with an offer to continue or wait for the user merely because leadership changed.
+6. Restore goal continuity as described below; goal-tool availability must never block the work.
+
+### Goal continuity across providers
+
+The portable goal is `state.json.goal` plus `progress.json` and `$RUN/goal.json`. `handoff.sh` automatically captures the old leader's native goal by its exact Herdr session ID into `$RUN/goal-native.json`: read-only Codex SQLite or Claude transcript records, with portable fallback if the private format is unavailable. It never types into the old leader. Before delivering the resume prompt, it restores an active goal with `/goal <objective>` in the ready successor and checks the new session record. The command also points at `$RUN/lead-resume.md`, because setting a goal immediately starts work. `$RUN/goal-transfer.json` records verification or fallback; an ambiguous submission is not repeated. A plain task title never implies permission to create a native goal. Paused, blocked, completed or budget-exhausted goals are not reactivated. A native `usage_limited` goal can resume when switching to the other provider: provider quota exhaustion is the reason for that handoff, and does not cancel the task or renew its token budget. Codex `/goal` cannot carry a token budget: a budgeted goal uses the successor's native tool with only the remaining allowance, rather than silently becoming unlimited. Provider formats are private; recovery must still work when they change. When the user explicitly requests a goal or goal inheritance, record its objective, acceptance criteria, remaining work, status and native budget snapshot (if available) with:
+
+```bash
+$SKILL_DIR/scripts/progress.sh --run $RUN goal '<JSON object>'
+```
+
+Keep this snapshot current at milestones and before a planned handoff. Include user constraints/authorization references and concrete next actions; never include credentials or private task data unnecessarily. The command accepts an object and stamps `updated_at`; it does not change native goal state. Automatic quota handoff relies on the last durable checkpoint, so update before quota exhaustion.
+
+On takeover, query an available native goal tool first. Continue an existing matching goal; do not duplicate or complete it because the leader changed. If no active goal exists, recreate it only when the user explicitly requested a goal or its inheritance, using the durable objective and remaining criteria. Carry over a known remaining token budget, never reset it to the original total; if unavailable, preserve the recorded limit and usage as constraints without inventing a fresh allowance. Respect an explicit user pause. If the provider has no equivalent tool, maintain the portable goal and continue the same task autonomously. Mark the portable/native goal complete only after the entire delivery meets its criteria, including required CI and cleanup. A working worker, background test, review finding or incomplete delivery means work remains.
 
 ## Workflow
 

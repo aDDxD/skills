@@ -60,8 +60,13 @@ After the user applies a fix, rerun `run-init.sh --push` to confirm `push_check:
 - **Panel pane closed by accident:** split a pane and restart it: `herdr pane run <pane> "$SKILL_DIR/scripts/panel.sh --run $RUN"`. Without the panel there is no automatic handoff.
 - **A script says "this pane is no longer the lead":** a handoff happened. Stop and do nothing more in this run. If the user wants this pane to lead again, they ask for it, and you run `handoff.sh --run $RUN --adopt`.
 - **The successor shows a startup dialog:** the panel shows it and waits. The user answers it in the successor's pane; the panel then delivers the resume prompt.
+- **Successor stops after a status update or dispatch:** follow the autonomous continuation and goal recovery instructions in SKILL.md, Resume a run. Inspect existing panes and collect their results; do not request fresh authorization for the original task or create duplicate workers.
 - **NO LEAD / stranded:** every provider ran out of quota. The run waits with its state intact. When a quota resets, the panel marks the lead active again; or the user opens any lead and asks it to resume the run (SKILL.md, Resume a run).
 - **handoff.lock left behind:** a handoff was interrupted. Check `lead.json` and `herdr agent list`, then remove `$RUN/handoff.lock`.
+
+## Native goal transfer fallback
+
+Inspect `$RUN/goal-native.json` and `$RUN/goal-transfer.json`. `verified` means the successor's session contains the restored goal; `unconfirmed` means input may have been delivered, so query the native goal before retrying. `existing_goal` preserves a goal already present in the new pane. `needs_budget_tool` requires restoring the known remaining allowance through the native tool before work, since `/goal` has no budget parameter. Never write the provider's SQLite database or transcript to activate a goal. Unsupported storage/commands fall back to the ordinary resume prompt and portable checkpoint; do not interrupt existing workers.
 
 ## Context compaction
 

@@ -69,6 +69,11 @@ else
   printf 'SKIP: shellcheck not installed\n'
 fi
 
+# Regression tests use only synthetic provider storage and a fake Herdr CLI.
+if ! python3 -B -m unittest discover -s "$skills_dir/herdr-duo/tests"; then
+  fail "herdr-duo goal handoff regression tests failed"
+fi
+
 if (( failures > 0 )); then
   printf 'Validation failed: %d failure(s), %d skill(s), %d shell script(s) checked.\n' "$failures" "$skills_checked" "$shells_checked" >&2
   exit 1

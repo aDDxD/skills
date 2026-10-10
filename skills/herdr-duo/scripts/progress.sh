@@ -6,6 +6,7 @@
 #        progress.sh --run DIR step N todo|active|done|failed   (N is 1-based)
 #        progress.sh --run DIR now TEXT                what you are doing right now
 #        progress.sh --run DIR check LABEL RC SUMMARY  a check you ran, e.g. "e2e" 1 "256/268 passed"
+#        progress.sh --run DIR goal JSON              checkpoint the portable goal object
 #        progress.sh --run DIR note TEXT               a decision or next step, appended to handoff.md
 set -euo pipefail
 . "$(dirname "$(realpath "$0")")/common.sh"
@@ -43,6 +44,22 @@ with open(path + ".lock", "w") as lock:
         if len(args) != 3: fail("check LABEL RC SUMMARY")
         p["checks"] = ([c for c in p["checks"] if c["label"] != args[0]]
                        + [{"label": args[0], "rc": int(args[1]), "summary": args[2], "at": now}])[-6:]
+    elif cmd == "goal":
+        if len(args) != 1: fail("goal needs one JSON object")
+        try:
+            goal = json.loads(args[0])
+        except json.JSONDecodeError as exc:
+            fail("invalid goal JSON: " + str(exc))
+        if not isinstance(goal, dict) or not isinstance(goal.get("objective"), str) or not goal["objective"].strip():
+            fail("goal needs an object with a nonempty objective string")
+        if goal.get("status", "active") not in ("active", "paused", "blocked", "usage_limited", "budget_limited", "complete"):
+            fail("invalid goal status")
+        goal.setdefault("status", "active")
+        goal["updated_at"] = now
+        goal_path = os.path.join(os.path.dirname(path), "goal.json")
+        with open(goal_path + ".tmp", "w") as f:
+            json.dump(goal, f, indent=2)
+        os.replace(goal_path + ".tmp", goal_path)
     elif cmd == "note":
         if len(args) != 1: fail("note TEXT")
         with open(notes, "a") as f:

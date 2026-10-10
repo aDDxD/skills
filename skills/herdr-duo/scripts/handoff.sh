@@ -45,11 +45,21 @@ PY
 
 if [ "$mode" = deliver ]; then
   [ "$(json_get "$lj" status)" = awaiting_approval ] || exit 0
+  mkdir "$run/deliver.lock" 2>/dev/null || exit 0
+  trap 'rmdir "$run/deliver.lock" 2>/dev/null || true' EXIT
   pane=$(json_get "$lj" pane); name=$(json_get "$lj" name)
   [ -z "$(pane_dialog "$pane")" ] || { echo "successor $name still shows a dialog in pane $pane"; exit 0; }
   st=$(agent_status "$pane")
   [ "$st" = idle ] || [ "$st" = "done" ] || { echo "successor $name is $st; waiting"; exit 0; }
-  herdr agent prompt "$pane" "$(json_get "$lj" pending_prompt)" >/dev/null
+  # /goal starts a turn itself. Its text points at the full resume instructions,
+  # so a verified restore is already the resume submission, not an extra turn.
+  restored=$(python3 "$here/goal-handoff.py" restore --run "$run" --pane "$pane")
+  [ "$restored" != defer ] || { echo "successor became busy; delivery deferred"; exit 0; }
+  if [ "$restored" != started ]; then
+    [ -z "$(pane_dialog "$pane")" ] || { echo "successor shows a dialog; delivery deferred"; exit 0; }
+    herdr agent prompt "$pane" "$(json_get "$lj" pending_prompt)" >/dev/null
+  fi
+  echo "goal transfer: $restored (details: $run/goal-transfer.json)"
   lead_update 'lead["status"] = "active"; lead.pop("pending_prompt", None)'
   echo "resume prompt delivered to $name (pane $pane)"
   exit 0
@@ -110,6 +120,9 @@ old_pane=$(json_get "$lj" pane); old_name=$(json_get "$lj" name)
 gen=$(json_get "$lj" generation); gen=$((${gen:-1} + 1))
 name="lead$gen"
 repo=$(json_get "$run/state.json" repo)
+# Read only the old leader's session. No input is sent to that pane, even when
+# quota is exhausted or a command is still running there.
+python3 "$here/goal-handoff.py" capture --run "$run" --pane "$old_pane" >/dev/null
 
 if [ "$target" = codex ]; then
   args=(-m "$HERDR_DUO_LEAD_CODEX_MODEL" -c "model_reasoning_effort=$HERDR_DUO_LEAD_CODEX_EFFORT")
@@ -134,7 +147,8 @@ pane=$(printf %s "$split_out" | python3 -c 'import json,sys; print(json.load(sys
   || die "could not read pane id from: $split_out"
 herdr agent start "$name" --kind "$target" --pane "$pane" --timeout 90000 -- "${args[@]}" >/dev/null 2>&1 || true
 
-prompt="Use the herdr-duo skill to resume the run at $run as its new lead (skill directory: $skill_dir). The previous lead $old_name stopped: $reason. Start with the section 'Resume a run' in SKILL.md."
+prompt="Use the herdr-duo skill to resume the run at $run as its new lead (skill directory: $skill_dir). The previous lead $old_name stopped: $reason. Start with the section 'Resume a run' in SKILL.md and execute it now. Inherit the original task and recorded user authorization; do not ask whether to continue. Read goal-native.json, goal-transfer.json if present, state.json, progress.json and goal.json. Respect paused, blocked, completed or budget-exhausted goal state; never reactivate it automatically. A native usage_limited goal may continue on the other provider as the skill describes. If goal-transfer.json says needs_budget_tool, use your native goal tool to restore the objective with only the known remaining token budget before starting work; never create an unlimited replacement. For an unavailable native reader/command, recover the portable goal as the skill permits and report the limitation without blocking authorized work. Inspect and collect every already-running owned worker/process without duplicating it, then continue all unfinished steps through validation and authorized delivery/cleanup. Do not stop after a status update or dispatch. Only a genuinely unresolved required user decision or actual approval dialog blocks dependent work; keep making independent progress."
+printf '%s\n' "$prompt" > "$run/lead-resume.md"
 lead_update '
 old = {k: lead.get(k) for k in ("name", "pane", "kind")}
 lead.setdefault("history", []).append(old | {"ended_at": now, "reason": args[4]})
