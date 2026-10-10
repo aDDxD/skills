@@ -55,8 +55,8 @@ Behaviour:
 - **Herdr**, with `herdr`, `git` and `python3` on `PATH`. The skill's preflight requires `HERDR_ENV=1`, so run it from a Herdr pane.
 - **Codex CLI**, for the Luna implementer and reviewers.
 - **Claude Code CLI**, for the Haiku implementer and reviewers.
-- Sol and Sonnet are used only for escalations. Their model IDs are set with `HERDR_DUO_SOL_MODEL` and `HERDR_DUO_SONNET_MODEL` in `~/.config/herdr-duo/config.env`.
-- Each run opens a status panel next to the lead. It also watches the lead's quota and, when the lead runs out, hands the run to a fresh lead of the other provider (Sol or Sonnet). Set `HERDR_DUO_LEAD_FALLBACK=off` in the same file to only warn.
+- Strong workers/reviewers use Sol or Sonnet, configured through `HERDR_DUO_SOL_MODEL` and `HERDR_DUO_SONNET_MODEL` in `~/.config/herdr-duo/config.env`; at most one is live, independently of the lead.
+- Each run opens a status panel next to the lead. When the lead runs out of quota, the successor preserves its initial band: **Opus ↔ Astra** or **Sonnet ↔ Sol 6.1**. Model detection uses the exact lead session; `run-init.sh --lead-model MODEL` supplies the actual model when detection is unavailable. Configure Opus/Astra through `HERDR_DUO_LEAD_OPUS_MODEL` / `HERDR_DUO_LEAD_ASTRA_MODEL`; explicit `HERDR_DUO_LEAD_CODEX_MODEL` / `HERDR_DUO_LEAD_CLAUDE_MODEL` override destinations. Set `HERDR_DUO_LEAD_FALLBACK=off` to only warn. Destinations are recorded once per run; old runs keep their legacy fallback.
 
 Run `~/.agents/skills/herdr-duo/scripts/preflight.sh` to check these. It is read-only.
 

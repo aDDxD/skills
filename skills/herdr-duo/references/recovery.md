@@ -57,6 +57,8 @@ After the user applies a fix, rerun `run-init.sh --push` to confirm `push_check:
 
 ## Panel and lead handoff
 
+- **Unknown lead band:** use `handoff.sh --run $RUN --reason "quota low" --lead-model <original model>` to resolve missing model information. This cannot replace an already recorded band. Preserve the user's initial Opus/Astra or Sonnet/Sol choice; do not infer the model from a global default or another pane. Old runs without model snapshots retain legacy configured destinations.
+- **Unexpected successor model:** inspect the destinations recorded in `lead.json` and the initial model shown by `status.sh`. Explicit `HERDR_DUO_LEAD_CODEX_MODEL` / `HERDR_DUO_LEAD_CLAUDE_MODEL` override the pair at run creation; configuration changes afterward apply to new runs.
 - **Panel pane closed by accident:** split a pane and restart it: `herdr pane run <pane> "$SKILL_DIR/scripts/panel.sh --run $RUN"`. Without the panel there is no automatic handoff.
 - **A script says "this pane is no longer the lead":** a handoff happened. Stop and do nothing more in this run. If the user wants this pane to lead again, they ask for it, and you run `handoff.sh --run $RUN --adopt`.
 - **The successor shows a startup dialog:** the panel shows it and waits. The user answers it in the successor's pane; the panel then delivers the resume prompt.

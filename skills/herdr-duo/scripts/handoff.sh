@@ -5,7 +5,7 @@
 # The previous lead's pane is left open and never typed into; the lead fence in
 # common.sh stops it from acting on the run if it wakes up again.
 #
-# Usage: handoff.sh --run DIR --reason TEXT [--to codex|claude]   start a successor lead
+# Usage: handoff.sh --run DIR --reason TEXT [--to codex|claude] [--lead-model MODEL]
 #        handoff.sh --run DIR --deliver     send the resume prompt once the successor is ready
 #        handoff.sh --run DIR --adopt       make the calling pane the lead (manual takeover)
 # Exit: 0 done or waiting for approval, 3 handoff disabled, 4 no provider with quota left.
@@ -14,12 +14,13 @@ here=$(dirname "$(realpath "$0")")
 . "$here/common.sh"
 skill_dir=$(dirname "$here")
 
-run=""; reason=""; to=""; mode=handoff
+run=""; reason=""; to=""; mode=handoff; lead_model=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --run) run=$2; shift 2 ;;
     --reason) reason=$2; shift 2 ;;
     --to) to=$2; shift 2 ;;
+    --lead-model) lead_model=$2; shift 2 ;;
     --deliver) mode=deliver; shift ;;
     --adopt) mode=adopt; shift ;;
     *) die "unknown argument: $1" ;;
@@ -73,11 +74,12 @@ if [ "$mode" = adopt ]; then
     exit 0
   fi
   kind=$(herdr agent get "$me" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["agent"].get("agent") or "")' 2>/dev/null || true)
+  adopted_model=$(lead_models detect --pane "$me")
   lead_update '
-lead.setdefault("history", []).append({k: lead.get(k) for k in ("name", "pane", "kind")} | {"ended_at": now, "reason": "adopted by another pane"})
+lead.setdefault("history", []).append({k: lead.get(k) for k in ("name", "pane", "kind", "model")} | {"ended_at": now, "reason": "adopted by another pane"})
 lead.update(pane=args[0], kind=args[1] or None, name="lead" + str(lead.get("generation", 1) + 1),
-            generation=lead.get("generation", 1) + 1, status="active")
-' "$me" "$kind"
+            generation=lead.get("generation", 1) + 1, status="active", model=args[2] or None)
+' "$me" "$kind" "$adopted_model"
   rm -f "$run/lead.warning"
   echo "this pane ($me) is now the lead of $run"
   exit 0
@@ -87,6 +89,12 @@ fi
 require_lead "$run"
 mkdir "$run/handoff.lock" 2>/dev/null || die "a handoff is already in progress ($run/handoff.lock)"
 trap 'rmdir "$run/handoff.lock" 2>/dev/null || true' EXIT
+
+if [ -n "$lead_model" ]; then
+  [ -z "$(json_get "$lj" band)" ] || die "the initial lead band is already recorded; --lead-model only resolves missing bands"
+  profile=$(lead_models init --pane "$(json_get "$lj" pane)" --model "$lead_model")
+  lead_update 'lead.update(__import__("json").loads(args[0]))' "$profile"
+fi
 
 cur_kind=$(json_get "$lj" kind)
 target=${to:-$HERDR_DUO_LEAD_FALLBACK}
@@ -100,6 +108,12 @@ case "$target" in
   codex|claude) ;;
   *) die "--to / HERDR_DUO_LEAD_FALLBACK must be auto, codex, claude or off" ;;
 esac
+
+# Resolve before opening a pane or changing leadership. Unknown new bands must
+# never silently downgrade; legacy records retain the previous defaults.
+selection=$(lead_models select --lead-file "$lj" --provider "$target")
+mapfile -t destination <<<"$selection"
+target_model=${destination[0]}; target_effort=${destination[1]:-}
 
 # A provider whose lead already ran out in this run is not tried again for 5 hours.
 recent=$(python3 - "$lj" "$target" <<'PY'
@@ -125,12 +139,12 @@ repo=$(json_get "$run/state.json" repo)
 python3 "$here/goal-handoff.py" capture --run "$run" --pane "$old_pane" >/dev/null
 
 if [ "$target" = codex ]; then
-  args=(-m "$HERDR_DUO_LEAD_CODEX_MODEL" -c "model_reasoning_effort=$HERDR_DUO_LEAD_CODEX_EFFORT")
+  args=(-m "$target_model" -c "model_reasoning_effort=$target_effort")
   grep -q -- '--no-daemon' <<<"$(codex --help 2>&1 || true)" && args+=(--no-daemon)
   # The successor runs unattended, so it cannot stop at approval prompts.
   if [ "$HERDR_DUO_LUNA_ACCESS" = full ]; then args+=(-s danger-full-access -a never); else args+=(-s workspace-write -a on-request); fi
 else
-  args=(--model "$HERDR_DUO_LEAD_CLAUDE_MODEL" --add-dir "$HERDR_DUO_STATE_ROOT" --add-dir "$skill_dir" --permission-mode "$HERDR_DUO_HAIKU_MODE")
+  args=(--model "$target_model" --add-dir "$HERDR_DUO_STATE_ROOT" --add-dir "$skill_dir" --permission-mode "$HERDR_DUO_HAIKU_MODE")
 fi
 for a in "${args[@]}"; do
   [[ "$a" =~ ^[A-Za-z0-9_./,=:@+-]+$ ]] || die "argument not shell-safe for herdr agent start: '$a'"
@@ -150,17 +164,17 @@ herdr agent start "$name" --kind "$target" --pane "$pane" --timeout 90000 -- "${
 prompt="Use the herdr-duo skill to resume the run at $run as its new lead (skill directory: $skill_dir). The previous lead $old_name stopped: $reason. Start with the section 'Resume a run' in SKILL.md and execute it now. Inherit the original task and recorded user authorization; do not ask whether to continue. Read goal-native.json, goal-transfer.json if present, state.json, progress.json and goal.json. Respect paused, blocked, completed or budget-exhausted goal state; never reactivate it automatically. A native usage_limited goal may continue on the other provider as the skill describes. If goal-transfer.json says needs_budget_tool, use your native goal tool to restore the objective with only the known remaining token budget before starting work; never create an unlimited replacement. For an unavailable native reader/command, recover the portable goal as the skill permits and report the limitation without blocking authorized work. Inspect and collect every already-running owned worker/process without duplicating it, then continue all unfinished steps through validation and authorized delivery/cleanup. Do not stop after a status update or dispatch. Only a genuinely unresolved required user decision or actual approval dialog blocks dependent work; keep making independent progress."
 printf '%s\n' "$prompt" > "$run/lead-resume.md"
 lead_update '
-old = {k: lead.get(k) for k in ("name", "pane", "kind")}
+old = {k: lead.get(k) for k in ("name", "pane", "kind", "model")}
 lead.setdefault("history", []).append(old | {"ended_at": now, "reason": args[4]})
 if old["kind"]:
     lead.setdefault("exhausted", {})[old["kind"]] = now
 lead.update(name=args[0], pane=args[1], kind=args[2], generation=int(args[3]),
-            status="awaiting_approval", pending_prompt=args[5])
+            status="awaiting_approval", pending_prompt=args[5], model=args[6])
 lead.pop("stranded_reason", None)
-' "$name" "$pane" "$target" "$gen" "$reason" "$prompt"
+' "$name" "$pane" "$target" "$gen" "$reason" "$prompt" "$target_model"
 rm -f "$run/lead.warning"
 
-echo "HANDOFF: $old_name ($old_pane) -> $name ($target, pane $pane): $reason"
+echo "HANDOFF: $old_name ($old_pane) -> $name ($target, $target_model, pane $pane): $reason"
 echo "The previous lead's pane stays open. If you are the previous lead: stop now and do nothing more in this run."
 dialog=$(pane_dialog "$pane")
 if [ -n "$dialog" ]; then

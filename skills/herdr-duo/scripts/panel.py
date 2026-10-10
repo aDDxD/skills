@@ -143,6 +143,12 @@ def render(state, progress, lead, agents):
     L.append("")
     L.append("Lead")
     L.append("  " + watchdog(lead, agents))
+    if lead:
+        band = lead.get('band') or ('unknown' if 'destinations' in lead else 'legacy')
+        L.append(f"  model: {lead.get('model') or '?'} · band: {band}")
+        if 'destinations' in lead:
+            L.append("  lead destinations: " + " · ".join(
+                f"{p}={d.get('model') or 'unresolved'}" for p, d in lead['destinations'].items()))
     recs = [r for k in ("workers", "reviewers") for r in state.get(k, [])]
     live = [r for r in recs if r.get("status") not in ("cleaned", "escalated")]
     L.append("")

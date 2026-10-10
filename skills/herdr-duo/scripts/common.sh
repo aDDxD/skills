@@ -19,9 +19,11 @@ HERDR_DUO_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/herdr-duo/config.env"
 # Lead handoff: auto = pass to the other provider when the lead runs out of quota;
 # codex|claude = always pass to that provider; off = the panel only warns.
 : "${HERDR_DUO_LEAD_FALLBACK:=auto}"
-: "${HERDR_DUO_LEAD_CODEX_MODEL:=$HERDR_DUO_SOL_MODEL}"
+# Optional LEAD_CODEX_MODEL / LEAD_CLAUDE_MODEL override the recorded pair.
+# Leave them unset to preserve the initial lead's band automatically.
+: "${HERDR_DUO_LEAD_ASTRA_MODEL:=gpt-6-astra}"
+: "${HERDR_DUO_LEAD_OPUS_MODEL:=claude-opus-5-5}"
 : "${HERDR_DUO_LEAD_CODEX_EFFORT:=$HERDR_DUO_SOL_EFFORT}"
-: "${HERDR_DUO_LEAD_CLAUDE_MODEL:=$HERDR_DUO_SONNET_MODEL}"
 : "${HERDR_DUO_LEAD_WARN_PCT:=10}"      # 5h quota left (%) at which the lead is told to prepare
 : "${HERDR_DUO_LEAD_HANDOFF_PCT:=2}"    # 5h quota left (%) at which an idle lead counts as out
 : "${HERDR_DUO_PANEL_INTERVAL:=5}"      # panel refresh, seconds
@@ -30,6 +32,18 @@ HERDR_DUO_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/herdr-duo/config.env"
 : "${HERDR_DUO_DEPS_NAMES:=node_modules .venv venv vendor}"
 
 die() { echo "ERROR: $*" >&2; exit 2; }
+
+# Snapshot lead destinations once; workers keep their own base/strong routing.
+lead_models() {
+  HERDR_DUO_SOL_MODEL="$HERDR_DUO_SOL_MODEL" \
+  HERDR_DUO_SONNET_MODEL="$HERDR_DUO_SONNET_MODEL" \
+  HERDR_DUO_LEAD_ASTRA_MODEL="$HERDR_DUO_LEAD_ASTRA_MODEL" \
+  HERDR_DUO_LEAD_OPUS_MODEL="$HERDR_DUO_LEAD_OPUS_MODEL" \
+  HERDR_DUO_LEAD_CODEX_MODEL="${HERDR_DUO_LEAD_CODEX_MODEL:-}" \
+  HERDR_DUO_LEAD_CLAUDE_MODEL="${HERDR_DUO_LEAD_CLAUDE_MODEL:-}" \
+  HERDR_DUO_LEAD_CODEX_EFFORT="$HERDR_DUO_LEAD_CODEX_EFFORT" \
+  python3 "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/lead-models.py" "$@"
+}
 
 # json_get FILE KEY -> prints the value of a top-level key ("" if missing).
 json_get() {

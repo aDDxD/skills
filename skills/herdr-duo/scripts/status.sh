@@ -26,6 +26,11 @@ lead = json.load(open(os.path.join(run, "lead.json"))) if os.path.exists(os.path
 if lead:
     print(f"lead: {lead['name']} ({lead.get('kind') or '?'}, pane {lead['pane']}, {lead.get('status')})  panel: {lead.get('panel_pane') or 'none'}"
           + (f"  previous: {', '.join(h['name'] + ' (' + h['reason'] + ')' for h in lead.get('history', []))}" if lead.get("history") else ""))
+    print(f"lead model: {lead.get('model') or '?'}  initial: {lead.get('initial_model') or '?'}  band: {lead.get('band') or ('unknown' if 'destinations' in lead else 'legacy')}")
+    if 'destinations' in lead:
+        print("lead destinations: " + ", ".join(f"{p}={d.get('model') or 'unresolved'}" for p, d in lead['destinations'].items()))
+    else:
+        print("lead destinations: legacy configured Sol/Sonnet defaults")
     me = os.environ.get("HERDR_PANE_ID")
     if me:
         print("you are the lead" if me == lead["pane"] else f"you are NOT the lead (your pane is {me}); see SKILL.md, Resume a run")

@@ -237,7 +237,7 @@ if args[:2]==['pane','read']:
 elif args[:2]==['pane','split']:
  print(json.dumps({'result':{'pane':{'pane_id':'new'}}}))
 elif args[:2]==['agent','get']:
- old=args[2]=='old';provider='codex' if old else 'claude'
+ old=args[2]=='old';provider=os.environ.get('SYNTHETIC_OLD_PROVIDER','codex') if old else os.environ.get('SYNTHETIC_NEW_PROVIDER','claude')
  sid='old-session' if old else 'session-1'
  print(json.dumps({'result':{'agent':{'agent':provider,'agent_status':'idle','agent_session':{'kind':'id','value':sid}}}}))
 elif args[:2]==['agent','prompt'] and args[-1].startswith('/goal '):

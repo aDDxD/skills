@@ -3,18 +3,19 @@
 # state.json outside the repository, then prints the facts the lead needs as
 # literal absolute paths (shell variables do not survive between tool calls).
 #
-# Usage: run-init.sh --repo DIR [--goal TEXT] [--commit] [--push] [--no-panel]
+# Usage: run-init.sh --repo DIR [--goal TEXT] [--lead-model MODEL] [--commit] [--push] [--no-panel]
 #   --commit / --push only when the user's initial request explicitly asked for them.
 # Inside Herdr it also records the calling pane as the run's lead (lead.json) and opens
 # the status panel with the lead watchdog in a pane to the right of the lead.
 set -euo pipefail
 . "$(dirname "$(realpath "$0")")/common.sh"
 
-repo=""; goal=""; commit=false; push=false; panel=yes
+repo=""; goal=""; commit=false; push=false; panel=yes; lead_model=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo=$2; shift 2 ;;
     --goal) goal=$2; shift 2 ;;
+    --lead-model) lead_model=$2; shift 2 ;;
     --commit) commit=true; shift ;;
     --push) push=true; shift ;;
     --no-panel) panel=no; shift ;;
@@ -94,6 +95,9 @@ EOF
 if [ -n "${HERDR_PANE_ID:-}" ]; then
   lead_kind=$(herdr agent get "$HERDR_PANE_ID" 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["agent"].get("agent") or "")' 2>/dev/null || true)
+  profile_args=(init --pane "$HERDR_PANE_ID")
+  [ -z "$lead_model" ] || profile_args+=(--model "$lead_model")
+  lead_profile=$(lead_models "${profile_args[@]}")
   panel_pane=""
   if [ "$panel" = yes ]; then
     script_dir=$(dirname "$(realpath "$0")")
@@ -106,13 +110,15 @@ if [ -n "${HERDR_PANE_ID:-}" ]; then
       }
     fi
   fi
-  python3 - "$run/lead.json" "$HERDR_PANE_ID" "$lead_kind" "$panel_pane" <<'PY'
+  python3 - "$run/lead.json" "$HERDR_PANE_ID" "$lead_kind" "$panel_pane" "$lead_profile" <<'PY'
 import json, sys
-path, pane, kind, panel = sys.argv[1:]
+path, pane, kind, panel, profile = sys.argv[1:]
 json.dump({"name": "lead1", "pane": pane, "kind": kind or None, "generation": 1, "status": "active",
-           "panel_pane": panel or None}, open(path, "w"), indent=2)
+           "panel_pane": panel or None, **json.loads(profile)}, open(path, "w"), indent=2)
 PY
   echo "lead: pane $HERDR_PANE_ID (${lead_kind:-unknown provider})  panel: ${panel_pane:-not started}  handoff: $HERDR_DUO_LEAD_FALLBACK"
+  echo "lead model: $(json_get "$run/lead.json" model)  band: $(json_get "$run/lead.json" band)  destinations: $(json_get "$run/lead.json" destinations)"
+  [ -n "$(json_get "$run/lead.json" band)" ] || echo "WARNING: lead model band unknown; automatic handoff needs an explicit destination. See SKILL.md, Panel and lead handoff."
 fi
 
 # Hint for a failed origin check. Never prints the URL itself, so no credentials leak.
