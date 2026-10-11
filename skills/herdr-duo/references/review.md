@@ -20,6 +20,8 @@ Prefer an idle implementer of the other provider over a new session, because a n
 $SKILL_DIR/scripts/spawn.sh --run $RUN --name rev --provider <the non-author provider> --role reviewer --review-of <author>
 ```
 
+Dedicated reviewers inherit the recorded worker level; do not downgrade strong-run reviews merely to save quota.
+
 Write `$RUN/rev/assignment.md` from the reviewer template, then dispatch it. Afterwards, prove the review changed nothing. Run `delta.sh` into a separate file, so the reviewed artifact is never overwritten:
 
 ```bash
@@ -40,9 +42,9 @@ Add one third session only when one of these holds:
 Rules:
 
 - Use the provider that did not author the change. If only one provider is available, use it in a fresh session, never the author's own session.
-- For high-risk logic such as financial rules, you may spawn the arbiter with `--tier strong`, provided no other strong session is live. Close it as soon as its report is in.
+- For high-risk logic such as financial rules, you may spawn the arbiter with `--tier strong`, provided the base run's single strong slot is free (strong runs allow parallel strong sessions). Close it as soon as its report is in.
 - Spawn it with `--role reviewer`. Its read-only profile, plus the before/after comparison above, keeps it honest.
-- It counts against the cap while it is open. Close it with `herdr pane close <pane>` once its report is in, unless a follow-up round is planned.
+- In base runs, a strong reviewer occupies the single strong slot while open. Close it with `herdr pane close <pane>` once its report is in, unless a follow-up round is planned.
 - Review sessions are sized to risk, not to the number of workers: many low-risk deltas need no reviewer at all, and one reviewer session can review several small medium-risk deltas in turn.
 
 ## Handling findings

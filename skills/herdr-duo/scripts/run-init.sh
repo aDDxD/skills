@@ -3,19 +3,20 @@
 # state.json outside the repository, then prints the facts the lead needs as
 # literal absolute paths (shell variables do not survive between tool calls).
 #
-# Usage: run-init.sh --repo DIR [--goal TEXT] [--lead-model MODEL] [--commit] [--push] [--no-panel]
+# Usage: run-init.sh --repo DIR [--goal TEXT] [--lead-model MODEL] [--worker-tier base|strong] [--commit] [--push] [--no-panel]
 #   --commit / --push only when the user's initial request explicitly asked for them.
 # Inside Herdr it also records the calling pane as the run's lead (lead.json) and opens
 # the status panel with the lead watchdog in a pane to the right of the lead.
 set -euo pipefail
 . "$(dirname "$(realpath "$0")")/common.sh"
 
-repo=""; goal=""; commit=false; push=false; panel=yes; lead_model=""
+repo=""; goal=""; commit=false; push=false; panel=yes; lead_model=""; worker_tier=base
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo=$2; shift 2 ;;
     --goal) goal=$2; shift 2 ;;
     --lead-model) lead_model=$2; shift 2 ;;
+    --worker-tier) worker_tier=$2; shift 2 ;;
     --commit) commit=true; shift ;;
     --push) push=true; shift ;;
     --no-panel) panel=no; shift ;;
@@ -23,6 +24,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$repo" ] || die "--repo is required"
+case "$worker_tier" in base|strong) ;; *) die "--worker-tier must be base or strong" ;; esac
 top=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) \
   || die "not a git repository: $repo. Run 'git init' and make an initial commit (workers start from HEAD)"
 repo=$top
@@ -65,14 +67,15 @@ for d in "$wt_root"/*/; do
   [ -d "$d" ] && stale="$stale $(basename "$d")"
 done
 
-python3 - "$run/state.json" "$repo" "$branch" "$head" "$default_branch" "$commit" "$push" "$goal" "$wt_root" <<'PY'
+python3 - "$run/state.json" "$repo" "$branch" "$head" "$default_branch" "$commit" "$push" "$goal" "$wt_root" "$worker_tier" <<'PY'
 import json, sys, datetime
-path, repo, branch, head, default_branch, commit, push, goal, wt_root = sys.argv[1:]
+path, repo, branch, head, default_branch, commit, push, goal, wt_root, worker_tier = sys.argv[1:]
 json.dump({
     "goal": goal, "repo": repo, "branch": branch, "head": head,
     "default_branch": default_branch or None,
     "commit_authorized": commit == "true", "push_authorized": push == "true",
     "wt_root": wt_root, "workers": [], "reviewers": [], "status": "planning",
+    "worker_tier": worker_tier,
     "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
 }, open(path, "w"), indent=2)
 PY
@@ -84,6 +87,7 @@ WT_ROOT=$wt_root
 REPO=$repo
 branch: $branch  head: ${head:0:12}  default_branch: ${default_branch:-unknown}
 commit_authorized: $commit  push_authorized: $push
+worker_tier: $worker_tier
 uncommitted: $modified modified tracked, $untracked untracked (use --from-checkout if workers need them)
 instruction_files:${instructions:- none}
 deps_candidates:${deps:- none}  (pass --deps-auto to copy them)

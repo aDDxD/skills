@@ -163,6 +163,9 @@ class HandoffTests(goals.GoalFixture, unittest.TestCase):
 
     def test_two_generations_keep_initial_band_despite_config_change(self):
         env = self.setup_run('gpt-6-astra')
+        state = goals.g.read_json(self.run / 'state.json')
+        state['worker_tier'] = 'strong'
+        goals.g.atomic_json(self.run / 'state.json', state)
         first = self.handoff(env)
         self.assertEqual(first.returncode, 0, first.stderr)
         lead = goals.g.read_json(self.run / 'lead.json')
@@ -180,6 +183,7 @@ class HandoffTests(goals.GoalFixture, unittest.TestCase):
         self.assertEqual(lead['model'], 'gpt-6-astra')
         self.assertEqual([h['model'] for h in lead['history']],
                          ['gpt-6-astra', 'claude-opus-5-5'])
+        self.assertEqual(goals.g.read_json(self.run / 'state.json')['worker_tier'], 'strong')
 
     def test_run_init_records_profile_and_live_strong_excludes_lead(self):
         env = self.setup_run('gpt-6-astra')

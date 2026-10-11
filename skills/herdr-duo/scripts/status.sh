@@ -21,6 +21,7 @@ import json, os, sys
 s = json.load(open(sys.argv[1]))
 print(f"goal: {s.get('goal') or '-'}")
 print(f"repo: {s['repo']}  commit_authorized={s.get('commit_authorized')} push_authorized={s.get('push_authorized')}")
+print(f"worker tier: {s.get('worker_tier', 'base')} (Luna/Haiku=base, Sol/Sonnet=strong)")
 run = os.path.dirname(sys.argv[1])
 lead = json.load(open(os.path.join(run, "lead.json"))) if os.path.exists(os.path.join(run, "lead.json")) else {}
 if lead:
@@ -57,7 +58,7 @@ for r in recs:
           f"{r.get('status', '?'):<20} fix_rounds={r.get('fix_rounds', 0)} pane={r.get('pane') or '-'}"
           f"{' integrated' if integrated else ''}{extra}")
 strong = [r["name"] for r in live if r.get("tier") == "strong"]
-print(f"live strong session: {strong[0] if strong else 'none'}")
+print(f"live strong sessions: {', '.join(strong) if strong else 'none'}")
 for e in s.get("escalations", []):
     print(f"escalation: {e['from']} -> {e['to']} ({'cross-cutting' if e.get('cross_cutting') else str(e.get('fix_rounds', 0) + 1) + ' failed rounds'}): {e['reason']}")
 todo = []
@@ -65,7 +66,7 @@ for r in live:
     st = r.get("status")
     if st in ("needs_approval", "blocked"): todo.append(f"{r['name']}: {st}, needs the user")
     elif st in ("settled_no_report", "timeout_or_stalled"): todo.append(f"{r['name']}: {st}, see references/recovery.md")
-    elif st == "settled" and r.get("tier") == "strong": todo.append(f"{r['name']}: strong session settled; integrate and clean it up now")
+    elif st == "settled" and r.get("tier") == "strong" and s.get("worker_tier", "base") != "strong": todo.append(f"{r['name']}: strong session settled; integrate and clean it up now")
     elif st == "settled" and r["role"] == "reviewer": todo.append(f"{r['name']}: reviewer settled; close it unless a follow-up round is planned")
     elif st == "dispatched": todo.append(f"{r['name']}: dispatched; if no dispatch of yours is waiting on it, collect it: dispatch.sh --collect")
 for t in todo:

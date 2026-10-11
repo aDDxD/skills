@@ -12,7 +12,7 @@ HERDR_DUO_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/herdr-duo/config.env"
 : "${HERDR_DUO_LUNA_ACCESS:=full}"        # full = danger-full-access + never ask; workspace = workspace-write + on-request
 : "${HERDR_DUO_HAIKU_MODEL:=claude-haiku-5-5}"
 : "${HERDR_DUO_HAIKU_MODE:=auto}"         # auto | acceptEdits | default
-# Strong tier, only for escalations and cross-cutting tasks; one live session at a time.
+# Strong tier: selected team level, or one escalation/cross-cutting session in base runs.
 : "${HERDR_DUO_SOL_MODEL:=gpt-6.1-sol}"
 : "${HERDR_DUO_SOL_EFFORT:=high}"
 : "${HERDR_DUO_SONNET_MODEL:=claude-sonnet-5-5}"

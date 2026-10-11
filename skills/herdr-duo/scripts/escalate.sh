@@ -37,6 +37,8 @@ role=$(record_get "$run" "$name" role)
 [ "$role" = implementer ] || die "'$name' is not an implementer in this run"
 tier=$(record_get "$run" "$name" tier)
 [ "${tier:-base}" = base ] || die "'$name' is already strong; strong sessions do not escalate further. Report the blocker"
+[ "$(json_get "$run/state.json" worker_tier)" != strong ] \
+  || die "this run selected strong workers; escalation is disabled. Report the blocker"
 status=$(record_get "$run" "$name" status)
 case "$status" in
   cleaned|escalated) die "'$name' is $status" ;;

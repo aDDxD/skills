@@ -19,8 +19,8 @@
 #   claude implementer: --permission-mode auto           (HERDR_DUO_HAIKU_MODE=auto)
 #   codex reviewer    : read-only sandbox, never ask
 #   claude reviewer   : dontAsk, edit tools disallowed
-# Tiers: base = Luna / Haiku (scale horizontally as the plan allows);
-#        strong = Sol / Sonnet (one live strong session per run, never more).
+# Tiers default to the run's worker_tier (base for legacy runs).
+# Strong runs scale Sol / Sonnet normally; base runs allow one live strong session.
 # --continue-from NAME: an implementer that takes over NAME's worktree and state dir
 #   (used by escalate.sh); NAME's baseline, delta and integration history carry over.
 set -euo pipefail
@@ -28,7 +28,7 @@ here=$(dirname "$(realpath "$0")")
 . "$here/common.sh"
 
 run=""; name=""; provider=""; role=""; review_of=""; split_from=""; direction=right; dry=no; recheck=no
-tier=base; continue_from=""
+tier=""; continue_from=""
 base_args=(); source_mode=checkout
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -73,10 +73,14 @@ fi
 case "$provider" in codex|claude) ;; *) die "--provider must be codex or claude" ;; esac
 case "$role" in implementer|reviewer) ;; *) die "--role must be implementer or reviewer" ;; esac
 case "$direction" in right|down) ;; *) die "--direction must be right or down" ;; esac
+# Persisted run choice applies to implementers and dedicated reviewers, including
+# after lead handoff. Runs created before worker selection retain the base default.
+[ -n "$tier" ] || tier=$(json_get "$run/state.json" worker_tier)
+tier=${tier:-base}
 case "$tier" in base|strong) ;; *) die "--tier must be base or strong" ;; esac
 [ "$role" = implementer ] || [ -n "$review_of" ] || die "a reviewer needs --review-of AUTHOR"
 [ -z "$continue_from" ] || [ "$role" = implementer ] || die "--continue-from is for implementers"
-if [ "$tier" = strong ]; then
+if [ "$tier" = strong ] && [ "$(json_get "$run/state.json" worker_tier)" != strong ]; then
   busy=$(live_strong "$run")
   [ -z "$busy" ] || [ "$busy" = "$name" ] \
     || die "strong session '$busy' is still live; strong sessions never run in parallel. Finish and clean it up first"

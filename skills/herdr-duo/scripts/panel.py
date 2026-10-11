@@ -153,6 +153,7 @@ def render(state, progress, lead, agents):
     live = [r for r in recs if r.get("status") not in ("cleaned", "escalated")]
     L.append("")
     L.append(f"Agents ({len(live)} live, {len(recs) - len(live)} closed)")
+    L.append(f"  worker tier: {state.get('worker_tier', 'base')} (base=Luna/Haiku, strong=Sol/Sonnet)")
     quota = {}
     for r in live:
         a = agents.get(r.get("pane"), {})

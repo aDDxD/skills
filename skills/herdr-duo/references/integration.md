@@ -47,7 +47,7 @@ No force push. Never push to the default branch unless the user named it. Merge,
 
 ## Cleanup
 
-Close a strong session right after its delta is integrated, not at the end of the run. Close reviewers once their report is in. At the end, for each remaining session this run created:
+In base runs, close an exceptional strong session right after its delta is integrated. In strong runs, regular Sol/Sonnet workers may be reused at safe task boundaries. Close reviewers once their report is in. At the end, for each remaining session this run created:
 
 ```bash
 $SKILL_DIR/scripts/cleanup.sh --run $RUN --name <name>

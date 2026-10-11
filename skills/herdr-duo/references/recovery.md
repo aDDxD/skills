@@ -29,7 +29,7 @@ A ref, HEAD, branch or git config changed. It was either a worker, or the user w
 ## Escalation refused (`escalate.sh` exits 2)
 
 - "no failed fix round yet": send one `dispatch.sh --fix` round first, or use `--cross-cutting` with evidence.
-- "strong session ... is still live": finish that session's problem, integrate it and run `cleanup.sh` on it, then escalate. Never run two strong sessions in parallel.
+- "strong session ... is still live": finish that session's problem, integrate it and run `cleanup.sh` on it, then escalate. This single-slot rule applies to base runs; strong runs allow parallel Sol/Sonnet sessions.
 - "already strong": strong sessions do not escalate further. Report the blocker.
 
 If `escalate.sh` fails after closing the base pane, the work is still in the worktree and the attempt patch is saved. Start the strong session directly: `spawn.sh --run $RUN --name <new> --provider <p> --role implementer --tier strong --continue-from <worker>`.
