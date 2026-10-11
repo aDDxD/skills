@@ -49,7 +49,9 @@ def event(msg):
 
 
 def remaining(agent):
-    m = re.search(r"(\d+)%", ((agent or {}).get("tokens") or {}).get("limit") or "")
+    # 'limits' carries the current 5h and 7d windows; 'limit' can be stale. Only the 5h entry counts.
+    tokens = (agent or {}).get("tokens") or {}
+    m = re.search(r"\b5h (\d+)%", tokens.get("limits") or "") or re.search(r"\b5h (\d+)%", tokens.get("limit") or "")
     return int(m.group(1)) if m else None
 
 
