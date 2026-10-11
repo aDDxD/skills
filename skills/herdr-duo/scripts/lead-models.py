@@ -75,7 +75,7 @@ def profile(model):
     return {'initial_model': model, 'model': model, 'band': band,
             'destinations': {
                 'codex': {'model': env.get('HERDR_DUO_LEAD_CODEX_MODEL') or codex,
-                          'effort': env.get('HERDR_DUO_LEAD_CODEX_EFFORT', 'high')},
+                          'effort': env.get('HERDR_DUO_LEAD_CODEX_EFFORT', 'medium')},
                 'claude': {'model': env.get('HERDR_DUO_LEAD_CLAUDE_MODEL') or claude}}}
 
 
@@ -90,7 +90,7 @@ def select(lead, provider):
     env = os.environ
     if provider == 'codex':
         return {'model': env.get('HERDR_DUO_LEAD_CODEX_MODEL') or env.get('HERDR_DUO_SOL_MODEL', 'gpt-6.1-sol'),
-                'effort': env.get('HERDR_DUO_LEAD_CODEX_EFFORT', 'high')}
+                'effort': env.get('HERDR_DUO_LEAD_CODEX_EFFORT', 'medium')}
     return {'model': env.get('HERDR_DUO_LEAD_CLAUDE_MODEL') or env.get('HERDR_DUO_SONNET_MODEL', 'claude-sonnet-5-5')}
 
 

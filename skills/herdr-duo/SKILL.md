@@ -31,7 +31,7 @@ If preflight reports a missing `HERDR_ENV`, report that the command environment 
 |---|---|---|---|
 | Luna (implementer) | base | Codex, `gpt-6-luna`, effort medium | `-s danger-full-access -a never` (full access, never asks) |
 | Haiku (implementer) | base | Claude Code, `claude-haiku-5-5` | `--permission-mode auto`, plus `--add-dir` for its state directory |
-| Sol (implementer) | strong | Codex, `gpt-6.1-sol`, effort high | same as Luna |
+| Sol (implementer) | strong | Codex, `gpt-6.1-sol`, effort medium | same as Luna |
 | Sonnet (implementer) | strong | Claude Code, `claude-sonnet-5-5` | same as Haiku |
 | Codex reviewer | base or strong | Codex | `-s read-only -a never` |
 | Claude reviewer | base or strong | Claude Code | `--permission-mode dontAsk`, edit tools disallowed |

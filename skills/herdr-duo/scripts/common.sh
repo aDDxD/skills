@@ -14,7 +14,7 @@ HERDR_DUO_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/herdr-duo/config.env"
 : "${HERDR_DUO_HAIKU_MODE:=auto}"         # auto | acceptEdits | default
 # Strong tier: selected team level, or one escalation/cross-cutting session in base runs.
 : "${HERDR_DUO_SOL_MODEL:=gpt-6.1-sol}"
-: "${HERDR_DUO_SOL_EFFORT:=high}"
+: "${HERDR_DUO_SOL_EFFORT:=medium}"
 : "${HERDR_DUO_SONNET_MODEL:=claude-sonnet-5-5}"
 # Lead handoff: auto = pass to the other provider when the lead runs out of quota;
 # codex|claude = always pass to that provider; off = the panel only warns.
