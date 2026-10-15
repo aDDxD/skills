@@ -5,7 +5,7 @@
 #
 # Usage: dispatch.sh --run DIR --name NAME [--timeout-min 30] [--message TEXT | --fix TEXT | --collect]
 #   --message  follow-up instead of the initial pointer (report repeats, clarifications)
-#   --fix      follow-up that rejects the previous round; counts toward escalation
+#   --fix      follow-up that rejects the previous round (counted in fix_rounds)
 #   --collect  send nothing: wait for a session that is already working and print its
 #              report (after a lead handoff, for workers the previous lead dispatched)
 #   The initial pointer (no --message/--fix) starts a new task and resets the fix count.
@@ -26,9 +26,11 @@ while [ $# -gt 0 ]; do
     *) die "unknown argument: $1" ;;
   esac
 done
+[[ "$timeout_min" =~ ^[1-9][0-9]*$ ]] || die "--timeout-min must be a positive integer"
+[ "$collect" = no ] || [ -z "$message" ] || die "--collect cannot be combined with --message or --fix"
 [ -f "$run/state.json" ] || die "no state.json in '$run'"
 run=$(realpath "$run")
-require_lead "$run"
+require_owner "$run" "$name"
 assignment="$run/$name/assignment.md"
 initial=no
 if [ -z "$message" ] && [ "$collect" = no ]; then
@@ -62,9 +64,9 @@ else
   out=$(herdr agent prompt "$name" "$message" --wait --timeout $((timeout_min * 60000)) 2>&1) || rc=$?
 fi
 
-agent_state=$(agent_status "$name")
+agent_state=$(agent_status "$name" || true)
 
-report=$(herdr agent read "$name" --source recent-unwrapped --lines 150 2>/dev/null | python3 "$(dirname "$(realpath "$0")")/extract-report.py")
+report=$(herdr agent read "$name" --source recent-unwrapped --lines 150 2>/dev/null | python3 "$(dirname "$(realpath "$0")")/extract-report.py" || true)
 
 code=0
 if [ "$rc" -ne 0 ]; then
@@ -80,8 +82,7 @@ else
   set_status settled
 fi
 
-tier=$(record_get "$run" "$name" tier)
-echo "== $name: state=${agent_state:-unknown} prompt_rc=$rc exit=$code tier=${tier:-base} fix_rounds=$fix_rounds"
+echo "== $name: state=${agent_state:-unknown} prompt_rc=$rc exit=$code model=$(record_get "$run" "$name" model) fix_rounds=$fix_rounds"
 [ "$rc" -eq 0 ] || echo "prompt: $(printf %s "$out" | tr '\n' ' ' | cut -c1-300)"
 if [ -n "$report" ]; then
   printf '%s\n' "$report"
@@ -89,11 +90,7 @@ else
   echo "(no final report found; inspect: herdr agent read $name --source recent-unwrapped --lines 120)"
 fi
 if [ "$fix_rounds" -ge 1 ] && [ "$code" -eq 0 ]; then
-  if [ "${tier:-base}" = strong ]; then
-    echo "note: if this fix round failed too, stop and report the blocker; strong sessions do not escalate further"
-  else
-    echo "note: if this fix round failed too, that is two failed rounds; escalate unless the work is mechanical (escalate.sh)"
-  fi
+  echo "note: if this fix round failed too, do not loop: take the problem yourself or give it to a stronger model (spawn.sh --model)"
 fi
 lead_warning "$run"
 exit $code

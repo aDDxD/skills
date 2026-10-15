@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Record the lead's progress for the status panel and for a lead handoff.
+# Record the leads' progress for the status panel and for a lead handoff. Both leads may
+# write; the sibling records its slice as notes and checks.
 # Everything a successor lead needs that is not in state.json lives here.
 #
 # Usage: progress.sh --run DIR plan TITLE...           set the checklist (keeps the status of unchanged titles)
@@ -15,7 +16,7 @@ run=""
 [ "${1:-}" = --run ] && { run=${2:-}; shift 2; }
 [ -f "$run/state.json" ] || die "usage: progress.sh --run DIR plan|step|now|check|note ..."
 run=$(realpath "$run")
-require_lead "$run"
+require_member "$run"
 cmd=${1:-}; shift || true
 
 python3 - "$run/progress.json" "$run/handoff.md" "$cmd" "$@" <<'PY'

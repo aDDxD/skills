@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Verify and optionally apply a worker delta to the lead's checkout.
+# Verify and optionally apply a worker delta to its source: the user's checkout (principal
+# only), or a sibling lead's worktree for that sibling's helpers (--base-from).
 # Refuses when any touched path no longer matches the baseline tree, so
 # intervening user edits are never overwritten. Stages and commits nothing.
 #
@@ -24,27 +25,43 @@ state=$(realpath -m "$state")
 patch=$(realpath "$patch")
 bj="$state/baseline.json"
 [ -f "$bj" ] || die "no baseline.json in $state"
-require_lead "$(dirname "$state")"
+run_dir=$(dirname "$state")
 [ -s "$patch" ] || { echo "patch is empty: nothing to integrate"; exit 0; }
 
 repo=$(json_get "$bj" repo)
 base=$(json_get "$bj" baseline_tree)
 git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || die "target is not a git repository: $repo"
+if [ -f "$run_dir/state.json" ]; then
+  require_member "$run_dir"
+  who=$(member "$run_dir")
+  if [ "$who" != lead ] && [ "$who" != panel ]; then
+    [ "$(realpath -m "$repo")" = "$(realpath -m "$(record_get "$run_dir" "$who" worktree)")" ] \
+      || die "a sibling integrates only into its own worktree; the principal integrates into the user's checkout"
+  fi
+fi
 
 # Blob id of what is on disk now, matching how git stores it (symlinks by target).
 disk_blob() {
   local f="$repo/$1"
   if [ -L "$f" ]; then
-    printf %s "$(readlink "$f")" | git -C "$repo" hash-object --stdin
+    readlink -n -- "$f" | git -C "$repo" hash-object --stdin
   elif [ -f "$f" ]; then
     git -C "$repo" hash-object -- "$f"
+  elif [ -e "$f" ]; then
+    echo non-file
   else
     echo none
   fi
 }
 
 # Every path the patch touches: NUL-separated numstat, which lists both sides of renames.
-mapfile -d '' -t fields < <(git apply --numstat -z "$patch")
+stats=$(mktemp)
+trap 'rm -f "$stats"' EXIT
+if ! git apply --numstat -z "$patch" > "$stats"; then
+  echo "cannot inspect patch: $patch" >&2
+  exit 3
+fi
+mapfile -d '' -t fields < "$stats"
 paths=()
 i=0
 while [ $i -lt ${#fields[@]} ]; do
@@ -63,8 +80,14 @@ for p in "${paths[@]}"; do
   # <tree>:<path> resolves literally (no globbing), including symlink blobs.
   expected=$(git -C "$repo" rev-parse -q --verify "$base:$p" 2>/dev/null || echo none)
   actual=$(disk_blob "$p")
-  if [ "$expected" != "$actual" ]; then
-    echo "CONFLICT: $p differs from baseline (expected $expected, found $actual)" >&2
+  expected_mode=$(git -C "$repo" ls-tree --format='%(objectmode)' "$base" -- ":(literal)$p")
+  actual_mode=none
+  if [ -L "$repo/$p" ]; then actual_mode=120000
+  elif [ -f "$repo/$p" ]; then
+    if [ -x "$repo/$p" ]; then actual_mode=100755; else actual_mode=100644; fi
+  fi
+  if [ "$expected" != "$actual" ] || { [ -n "$expected_mode" ] && [ "$expected_mode" != "$actual_mode" ]; }; then
+    echo "CONFLICT: $p differs from baseline (expected $expected ${expected_mode:-none}, found $actual $actual_mode)" >&2
     conflicts=$((conflicts + 1))
   fi
 done

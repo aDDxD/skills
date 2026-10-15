@@ -1,54 +1,43 @@
 # Review policy
 
-Read this file once the first candidate delta exists. Size the review to the risk of the change, not to the number of workers.
+Read this file once the first candidate delta exists. Size the review to the risk of the change, not to the number of sessions.
 
 ## Risk tiers
 
 | Tier | Examples | Review |
 |---|---|---|
-| Low | Localized change, no contract or behavior change, existing tests cover it | You read the delta and run the checks. No reviewer. |
-| Medium | Behavior or contract change, new public surface, non-trivial logic | Cross-review: the other provider reviews the delta. |
-| High | Money or financial math, authorization, irreversible migrations, destructive operations, security boundaries | Cross-review plus the arbiter (third reviewer), before integration. |
+| Low | Localized change, no contract or behavior change, existing tests cover it | The integrating lead reads the delta and runs the checks. No reviewer. |
+| Medium | Behavior or contract change, new public surface, non-trivial logic | Cross-review by the other subscription. |
+| High | Money or financial math, authorization, irreversible migrations, destructive operations, security boundaries | Cross-review by the other lead, plus a second independent reviewer before integration. |
 
-A reviewer is always a different session from the author. Your own reading does not count as independent review for medium or high risk. If no independent session is available, say so in the final report and state how that limits readiness.
+A reviewer is always a different session from the author, and preferably the other subscription. Your own reading does not count as independent review for medium or high risk. If no independent session is available, say so in the final report and state how that limits readiness.
 
-## Cross-review
+## Cross-review between the leads
 
-Prefer an idle implementer of the other provider over a new session, because a new session costs context. Use one with no pending work, and send it the reviewer template through `dispatch.sh --message`. Note that a reused implementer keeps its full access. If you need a dedicated read-only reviewer, spawn one in the author's worktree:
+The two leads come from different subscriptions, so they are each other's natural reviewers:
+- **The sibling's slice:** the principal reviews it while integrating. For medium or high risk, add an independent reviewer from the principal's subscription.
+- **The principal's own changes:** write `git -C $REPO diff > $RUN/lead.patch`. Send the sibling the reviewer template with `dispatch.sh --run $RUN --name <sibling> --message "<review assignment path>"` once it is between tasks, or open a dedicated reviewer.
+- **A helper's delta:** a helper or reviewer of the other subscription. A reused helper keeps its full access, so prefer a dedicated read-only reviewer for medium or high risk:
 
 ```bash
-$SKILL_DIR/scripts/spawn.sh --run $RUN --name rev --provider <the non-author provider> --role reviewer --review-of <author>
+$SKILL_DIR/scripts/spawn.sh --run $RUN --name rev --provider <the non-author subscription> --role reviewer --review-of <author> [--model M]
 ```
 
-Dedicated reviewers inherit the recorded worker level; do not downgrade strong-run reviews merely to save quota.
+Choose the reviewer's model by risk: Haiku or Luna for routine medium-risk diffs, Opus or Sol (`--model`) for high risk. Reviewers are helpers and use `HERDR_DUO_HELPER_EFFORT` (default `xhigh`); `--effort` overrides it for that session.
 
-Write `$RUN/rev/assignment.md` from the reviewer template, then dispatch it. Afterwards, prove the review changed nothing. Run `delta.sh` into a separate file, so the reviewed artifact is never overwritten:
+After a review in an author's worktree, prove it changed nothing. Run `delta.sh` into a separate file, so the reviewed artifact is never overwritten:
 
 ```bash
 $SKILL_DIR/scripts/delta.sh --state $RUN/<author> --out $RUN/<author>/delta.after-review.patch
 cmp -s $RUN/<author>/delta.patch $RUN/<author>/delta.after-review.patch || echo "reviewer changed the worktree"
 ```
 
-If the files differ, discard the verdict, keep both patches, and investigate before going on.
-
-## Third reviewer (arbiter)
-
-Add one third session only when one of these holds:
-
-1. The change is high risk, and the cross-review is done.
-2. A blocking finding is disputed by the author after one fix round.
-3. Only one implementer ran and the change is medium or high risk. In that case the arbiter is the only independent review.
-
-Rules:
-
-- Use the provider that did not author the change. If only one provider is available, use it in a fresh session, never the author's own session.
-- For high-risk logic such as financial rules, you may spawn the arbiter with `--tier strong`, provided the base run's single strong slot is free (strong runs allow parallel strong sessions). Close it as soon as its report is in.
-- Spawn it with `--role reviewer`. Its read-only profile, plus the before/after comparison above, keeps it honest.
-- In base runs, a strong reviewer occupies the single strong slot while open. Close it with `herdr pane close <pane>` once its report is in, unless a follow-up round is planned.
-- Review sessions are sized to risk, not to the number of workers: many low-risk deltas need no reviewer at all, and one reviewer session can review several small medium-risk deltas in turn.
+If they differ, discard the verdict, keep both patches, and investigate before going on.
 
 ## Handling findings
 
-- **Blocking:** send it to the implementation owner as a fix round (`dispatch.sh --fix`), quoting the finding. Then re-run `delta.sh` and review only what changed. If the fix round fails too, apply the escalation rule in `SKILL.md`: escalate non-mechanical work once to a strong session; for mechanical work, or a strong session that fails its one fix round, stop and report to the user.
+- **Blocking:** send it to the owner as a fix round (`dispatch.sh --fix`), quoting the finding. Then re-run `delta.sh` and review only what changed. If the fix round fails too, take the problem yourself or give it to a stronger model; do not loop.
 - **Non-blocking:** list them in the final report. Do not fix them unless the acceptance criteria require it.
 - **"No findings":** record it as a review that happened, naming the reviewer and the delta it covered.
+
+Close dedicated reviewers once their report is in.

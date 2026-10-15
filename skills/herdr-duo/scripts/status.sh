@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# One-screen overview of a run: every session with tier, status and fix rounds, the
-# live strong session, escalations, and what still needs a decision. Read-only.
+# One-screen overview of a run: both leads, both subscriptions' 5h quota and the suggested
+# provider for new helper work, every session grouped by owner, and what still needs a
+# decision. Read-only.
 #
 # Usage: status.sh --run DIR
 set -euo pipefail
@@ -15,26 +16,35 @@ while [ $# -gt 0 ]; do
 done
 [ -f "$run/state.json" ] || die "no state.json in '$run'"
 run=$(realpath "$run")
+me=$(member "$run")
+quota line || true
+mine=$( [ -f "$run/lead.json" ] && json_get "$run/lead.json" kind || true)
+if [ "$me" != lead ] && [ "$me" != panel ] && [ "$me" != outsider ]; then mine=$(record_get "$run" "$me" provider); fi
+mapfile -t sug < <(quota suggest --for helper ${mine:+--mine "$mine"} 2>/dev/null || true)
+echo "helpers now: ${sug[0]:-unknown} (${sug[1]:-})"
 
-python3 - "$run/state.json" <<'PY'
+python3 - "$run/state.json" "$me" <<'PY'
 import json, os, sys
-s = json.load(open(sys.argv[1]))
+s, me = json.load(open(sys.argv[1])), sys.argv[2]
 print(f"goal: {s.get('goal') or '-'}")
 print(f"repo: {s['repo']}  commit_authorized={s.get('commit_authorized')} push_authorized={s.get('push_authorized')}")
-print(f"worker tier: {s.get('worker_tier', 'base')} (Luna/Haiku=base, Sol/Sonnet=strong)")
 run = os.path.dirname(sys.argv[1])
 lead = json.load(open(os.path.join(run, "lead.json"))) if os.path.exists(os.path.join(run, "lead.json")) else {}
+GONE = ("cleaned", "escalated", "promoted")
+recs = [r for k in ("workers", "reviewers") for r in s.get(k, [])]
+sib = next((r for r in recs if r.get("level") == "sibling" and r.get("status") not in GONE), None)
 if lead:
-    print(f"lead: {lead['name']} ({lead.get('kind') or '?'}, pane {lead['pane']}, {lead.get('status')})  panel: {lead.get('panel_pane') or 'none'}"
-          + (f"  previous: {', '.join(h['name'] + ' (' + h['reason'] + ')' for h in lead.get('history', []))}" if lead.get("history") else ""))
-    print(f"lead model: {lead.get('model') or '?'}  initial: {lead.get('initial_model') or '?'}  band: {lead.get('band') or ('unknown' if 'destinations' in lead else 'legacy')}")
-    if 'destinations' in lead:
-        print("lead destinations: " + ", ".join(f"{p}={d.get('model') or 'unresolved'}" for p, d in lead['destinations'].items()))
-    else:
-        print("lead destinations: legacy configured Sol/Sonnet defaults")
-    me = os.environ.get("HERDR_PANE_ID")
-    if me:
-        print("you are the lead" if me == lead["pane"] else f"you are NOT the lead (your pane is {me}); see SKILL.md, Resume a run")
+    print(f"principal: {lead['name']} ({lead.get('kind') or '?'} {lead.get('model') or '?'}, pane {lead['pane']}, {lead.get('status')})"
+          f"  panel: {lead.get('panel_pane') or 'none'}")
+    if lead.get("history"):
+        print("  previous: " + ", ".join(f"{h['name']} ({h.get('kind')}: {h['reason']})" for h in lead["history"]))
+print(f"sibling: {sib['name']} ({sib['provider']} {sib.get('model')}, pane {sib.get('pane')}, {sib.get('status')})" if sib else "sibling: none")
+if me == "lead":
+    print("you are the principal")
+elif me == "outsider":
+    print(f"you are NOT a lead of this run (your pane is {os.environ.get('HERDR_PANE_ID')}); see SKILL.md, Resume a run")
+elif me != "panel":
+    print(f"you are the sibling '{me}': act on your slice and your own helpers; report to the principal")
 prog = json.load(open(os.path.join(run, "progress.json"))) if os.path.exists(os.path.join(run, "progress.json")) else {}
 steps = prog.get("steps", [])
 if steps:
@@ -46,29 +56,34 @@ for c in prog.get("checks", [])[-4:]:
     print(f"check: {c['label']} exit={c['rc']} {c['summary']} ({c['at']})")
 if os.path.exists(os.path.join(run, "handoff.md")):
     print(f"handoff notes: {os.path.join(run, 'handoff.md')}")
-recs = [r for k in ("workers", "reviewers") for r in s.get(k, [])]
-live = [r for r in recs if r.get("status") not in ("cleaned", "escalated")]
+live = [r for r in recs if r.get("status") not in GONE]
 print(f"sessions: {len(live)} live, {len(recs) - len(live)} closed")
-for r in recs:
-    extra = ""
-    if r.get("review_of"): extra += f" reviews={r['review_of']}"
-    if r.get("continues"): extra += f" continues={r['continues']}"
-    integrated = os.path.exists(os.path.join(r.get("state_dir", ""), "integrated.sha"))
-    print(f"  {r['name']:<16} {r['provider']:<6} {r.get('tier', 'base'):<6} {r['role']:<11} "
-          f"{r.get('status', '?'):<20} fix_rounds={r.get('fix_rounds', 0)} pane={r.get('pane') or '-'}"
-          f"{' integrated' if integrated else ''}{extra}")
-strong = [r["name"] for r in live if r.get("tier") == "strong"]
-print(f"live strong sessions: {', '.join(strong) if strong else 'none'}")
-for e in s.get("escalations", []):
-    print(f"escalation: {e['from']} -> {e['to']} ({'cross-cutting' if e.get('cross_cutting') else str(e.get('fix_rounds', 0) + 1) + ' failed rounds'}): {e['reason']}")
+owners = ["lead"] + [r["name"] for r in recs if r.get("level") == "sibling"]
+for owner in owners + sorted({r.get("owner", "lead") for r in recs} - set(owners)):
+    mine = [r for r in recs if r.get("owner", "lead") == owner and r["name"] != owner]
+    if not mine:
+        continue
+    print(f"  owned by {owner}:")
+    for r in mine:
+        extra = ""
+        if r.get("review_of"): extra += f" reviews={r['review_of']}"
+        if r.get("base_from"): extra += f" base={r['base_from']}"
+        if r.get("continues"): extra += f" continues={r['continues']}"
+        integrated = os.path.exists(os.path.join(r.get("state_dir", ""), "integrated.sha"))
+        print(f"    {r['name']:<16} {r['provider']:<6} {r.get('model') or r.get('tier', '?'):<18} {r.get('level', 'helper'):<7} "
+              f"{r['role']:<11} {r.get('status', '?'):<20} fix={r.get('fix_rounds', 0)} pane={r.get('pane') or '-'}"
+              f"{' integrated' if integrated else ''}{extra}")
 todo = []
 for r in live:
-    st = r.get("status")
-    if st in ("needs_approval", "blocked"): todo.append(f"{r['name']}: {st}, needs the user")
-    elif st in ("settled_no_report", "timeout_or_stalled"): todo.append(f"{r['name']}: {st}, see references/recovery.md")
-    elif st == "settled" and r.get("tier") == "strong" and s.get("worker_tier", "base") != "strong": todo.append(f"{r['name']}: strong session settled; integrate and clean it up now")
-    elif st == "settled" and r["role"] == "reviewer": todo.append(f"{r['name']}: reviewer settled; close it unless a follow-up round is planned")
-    elif st == "dispatched": todo.append(f"{r['name']}: dispatched; if no dispatch of yours is waiting on it, collect it: dispatch.sh --collect")
+    st, who = r.get("status"), r.get("owner", "lead")
+    if st in ("needs_approval", "blocked"): todo.append(f"{r['name']} ({who}): {st}, needs the user")
+    elif st in ("settled_no_report", "timeout_or_stalled"): todo.append(f"{r['name']} ({who}): {st}, see references/recovery.md")
+    elif st == "settled" and r["role"] == "reviewer": todo.append(f"{r['name']} ({who}): reviewer settled; close it unless a follow-up round is planned")
+    elif st == "dispatched": todo.append(f"{r['name']} ({who}): dispatched; if no dispatch of yours is waiting on it, collect it: dispatch.sh --collect")
 for t in todo:
     print("todo: " + t)
+alerts = os.path.join(run, "alerts.log")
+if os.path.exists(alerts) and os.path.getsize(alerts):
+    print("alerts:")
+    print("".join("  " + l for l in open(alerts).readlines()[-5:]), end="")
 PY

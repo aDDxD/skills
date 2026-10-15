@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
 done
 [ "$mode" = snapshot ] || [ "$mode" = verify ] || die "usage: guard.sh snapshot|verify --run DIR"
 [ -f "$run/state.json" ] || die "no state.json in $run"
-require_lead "$run"
+require_member "$run"
 
 capture() {
   python3 - "$run/state.json" <<'PY'
@@ -43,12 +43,16 @@ snap = {
                  git("for-each-ref", "--format=%(objectname) %(refname)", cwd=repo).splitlines() if line),
     "config_sha": hashlib.sha256(open(config_path, "rb").read()).hexdigest() if os.path.exists(config_path) else "",
     "worktrees": {},
+    "missing": [],
 }
 for w in state.get("workers", []):
     wt = w.get("worktree")
     bj = os.path.join(w.get("state_dir", ""), "baseline.json")
     # Cleaned worktrees are gone, and an escalated one is checked under its successor.
-    if not wt or not os.path.isdir(wt) or not os.path.exists(bj) or w.get("status") in ("cleaned", "escalated"):
+    if not wt or w.get("status") in ("cleaned", "escalated", "promoted"):
+        continue
+    if not os.path.isdir(wt) or not os.path.exists(bj):
+        snap["missing"].append(w["name"])
         continue
     snap["worktrees"][w["name"]] = {
         "path": wt,
@@ -71,7 +75,7 @@ capture > "$run/guard.now.json"
 python3 - "$run/guard.json" "$run/guard.now.json" <<'PY'
 import json, sys
 old, new = (json.load(open(p)) for p in sys.argv[1:3])
-problems = []
+problems = [f"worker {name}: worktree or baseline disappeared" for name in new.get("missing", [])]
 if old["head"] != new["head"] or old["branch"] != new["branch"]:
     problems.append(f"repository HEAD/branch changed: {old['branch'] or 'detached'}@{old['head'][:12]} -> {new['branch'] or 'detached'}@{new['head'][:12]} (a worker or the user)")
 for ref in sorted(set(old["refs"]) | set(new["refs"])):

@@ -1,148 +1,183 @@
 ---
 name: herdr-duo
-description: "Orchestrate development inside Herdr with user-selected Luna/Haiku or Sol/Sonnet workers, scaled to the task's real parallelism, with narrow base-to-strong escalation, isolated worktrees, cross-review, and verified integration. Use when the user invokes herdr-duo or asks for this worker team in Herdr."
+description: "Run one task across both subscriptions inside Herdr: the lead you started (Opus or Sol) does the main work, delegates a separable slice to its sibling lead on the other subscription (Sol or Opus) so both 5-hour windows are used evenly, and both leads freely open Luna/Haiku helpers from either subscription. Keeps a live progress and quota panel, automatic lead handoff, isolated worktrees and verified integration. Use when the user invokes herdr-duo or asks to split work between Claude and Codex in Herdr."
 ---
 
 # Herdr Duo
 
-You are the lead, working in whatever repository the user is in. Stay on the model and provider the user chose for this session. Spend your turns on decisions: planning, routing, review judgment, integration and the final report. The scripts in `scripts/` do every deterministic step. Each script prints what it did, so you rarely need an extra turn to inspect.
+herdr-duo makes the user's two subscriptions, Claude and Codex, work as one. Each 5-hour window is a separate pool, and quota left unused at its reset is lost. The skill exists so that both pools are spent on useful work, evenly, without the lead's own pool running dry mid-task.
 
-Shell variables do not survive between tool calls. Use the literal absolute paths that `run-init.sh` prints. In this file, `$SKILL_DIR`, `$RUN` and `$REPO` stand for those printed values.
+- **Principal lead:** the session the user started, normally Opus 5.5 or Sol 6.1. It does the main work **itself**. It plans, holds the user's checkout, integrates and delivers.
+- **Sibling lead:** the other subscription's lead of the fixed pair (Opus ↔ Sol), opened for a separable slice. It works in its own worktree and reports to the principal. Astra is never used.
+- **Helpers:** Luna and Haiku by default, or any model you name. Either lead opens as many as the task can use, **from either subscription**.
 
-## Start
+Only the 5-hour windows count. Never plan, warn or throttle on weekly quota.
 
-Start the lead in a Herdr pane. For Codex versions that advertise `--no-daemon` in `codex --help`, launch the lead with `codex --no-daemon`. A shared app-server daemon started outside Herdr may execute commands without the pane's `HERDR_*` environment even when the CLI itself inherited it. `spawn.sh` applies this flag to Codex workers and reviewers when supported.
+The scripts in `scripts/` do every deterministic step and print what they did. Shell variables do not survive between tool calls: use the literal absolute paths `run-init.sh` prints. Here `$SKILL_DIR`, `$RUN` and `$REPO` stand for those values.
 
-If preflight reports a missing `HERDR_ENV`, report that the command environment lacks Herdr context and explain how to relaunch the lead. Do not infer that the user's terminal is outside Herdr solely from this failure. Never synthesize `HERDR_ENV=1`, copy another pane's IDs, or use the focused pane as a fallback. If a locally launched Codex still loses the variables, compare `printenv HERDR_ENV HERDR_PANE_ID HERDR_SOCKET_PATH` in the pane shell and in the agent's shell tool, then inspect Codex's shell environment policy.
+## Start (principal)
 
-1. Set `$SKILL_DIR` to this skill's base directory (the directory containing this `SKILL.md`), then run `$SKILL_DIR/scripts/preflight.sh`. It is read-only. If it fails, report the failing line and stop. A warning about one provider means you route its work to the other.
-2. **Choose the worker level once per new flow.** If the user already specified it for this flow, use that choice. Otherwise ask in their language: "Which worker level do you want: Luna/Haiku (base), or Sonnet/Sol (strong)?" You may recommend a level based on the task, but wait for their answer before creating the run or spawning sessions; read-only inspection and planning can continue. Do not infer it from the lead model or the task duration. Then run `$SKILL_DIR/scripts/run-init.sh --repo <repo> --goal "<one line>" --worker-tier <base|strong> [--lead-model <actual model>] [--commit] [--push]`. Pass `--commit` or `--push` only if the user's **initial** request explicitly asked for that. The script prints `RUN`, `REPO`, the branch and default branch, uncommitted counts, the repository's instruction files, dependency directories, and stale worktrees. It also records your pane as the run's lead and opens the **status panel** to the right of it (see "Panel and lead handoff"). Model detection reads Herdr metadata or the exact session's transcript; use `--lead-model` when unavailable, supplying the user's actual model rather than choosing a new one. Pass `--no-panel` only if the user asked for no panel.
-3. Read the repository's instruction files that it lists (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, README, manifests). They define the checks and conventions for this repo. Read the base `herdr` skill only if a Herdr command fails or you need one that these scripts do not cover.
+Start in a Herdr pane. With Codex, launch it as `codex --no-daemon` when `codex --help` lists that flag: a shared daemon started outside Herdr can lose the pane's `HERDR_*` variables. If preflight reports a missing `HERDR_ENV`, explain how to relaunch inside Herdr; never set `HERDR_ENV=1` yourself or borrow another pane's IDs.
+
+1. Run `$SKILL_DIR/scripts/preflight.sh` (read-only). Report a failing line and stop. A provider warning means you run the task on the other subscription only. If it shows `quota hook (claude): no`, tell the user once that `$SKILL_DIR/scripts/install-hooks.sh` adds the quota line to every lead turn.
+2. Run `$SKILL_DIR/scripts/run-init.sh --repo <repo> --goal "<one line>" [--lead-model <actual model>] [--lead-effort <actual effort>] [--commit] [--push]`. Pass `--commit` or `--push` only if the user's **initial** request asked for that. It prints `RUN`, the repository facts, the lead pair, both 5h windows, and the instruction files. It records your pane as the principal and opens the **status panel** beside you (`--no-panel` only if the user asked).
+3. Read the repository's instruction files it lists (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, README, manifests). They define checks and conventions. Read the base `herdr` skill only if a Herdr command fails or you need one these scripts do not cover.
+
+Do not ask the user which worker level to use; that choice no longer exists.
 
 ## Authorization
 
-- Invocation authorizes: worker and reviewer panes, worktrees under the herdr-duo state directory, and integrating reviewed changes into the user's checkout as uncommitted edits.
-- Commit and push happen only when recorded at `run-init`, that is, when the initial request asked for them. Never merge, rebase, reset, force-push, amend, use `--no-verify`, open a PR, deploy, or change authentication, billing or permissions unless explicitly asked for that exact action.
-- Workers run with broad access by the user's choice (see the access profiles below). Their git restrictions are therefore enforced by instruction plus detection: run `guard.sh snapshot` before dispatch, and `guard.sh verify` after every settle and before integrating or committing. A violation stops the run until you have shown it to the user.
+- Invocation authorizes the sibling and helper panes, worktrees under the herdr-duo state directory, and integrating reviewed changes into the user's checkout as uncommitted edits.
+- Commit and push happen only when recorded at `run-init`. Never merge, rebase, reset, force-push, amend, use `--no-verify`, open a PR, deploy, or change authentication, billing or permissions unless asked for that exact action.
+- Sessions run with broad access (see `spawn.sh`). Their git restrictions are enforced by instruction plus detection: run `guard.sh snapshot` before dispatch and `guard.sh verify` after every settle and before integrating or committing. A violation stops the run until you have shown it to the user.
 
-## Team and access profiles
+## Splitting the work
 
-| Session | Tier | Agent | Default profile |
-|---|---|---|---|
-| Luna (implementer) | base | Codex, `gpt-6-luna`, effort medium | `-s danger-full-access -a never` (full access, never asks) |
-| Haiku (implementer) | base | Claude Code, `claude-haiku-5-5` | `--permission-mode auto`, plus `--add-dir` for its state directory |
-| Sol (implementer) | strong | Codex, `gpt-6.1-sol`, effort medium | same as Luna |
-| Sonnet (implementer) | strong | Claude Code, `claude-sonnet-5-5` | same as Haiku |
-| Codex reviewer | base or strong | Codex | `-s read-only -a never` |
-| Claude reviewer | base or strong | Claude Code | `--permission-mode dontAsk`, edit tools disallowed |
+**1. Do the main work yourself.** You are the strongest session on this task. Delegate only when it saves time or uses quota that would otherwise go to waste.
 
-`run-init.sh --worker-tier base|strong` records the chosen level in `state.json`. `spawn.sh` defaults implementers and dedicated reviewers to that level; `--tier` is an explicit per-session override, used for escalation or a risk-based reviewer. Runs without `worker_tier` retain base behavior. This choice is independent of the lead band and survives handoffs; do not ask again on resume. Never spawn Astra/Opus as a worker or reviewer. The user can change them once, for every repository, in `~/.config/herdr-duo/config.env` (`HERDR_DUO_LUNA_MODEL`, `HERDR_DUO_LUNA_EFFORT`, `HERDR_DUO_LUNA_ACCESS=full|workspace`, `HERDR_DUO_HAIKU_MODEL`, `HERDR_DUO_HAIKU_MODE=auto|acceptEdits|default`, `HERDR_DUO_SOL_MODEL`, `HERDR_DUO_SOL_EFFORT`, `HERDR_DUO_SONNET_MODEL`, `HERDR_DUO_DEPS_NAMES`).
+**2. Open the sibling when the task has a separable slice:**
+- its own files;
+- a clear acceptance check;
+- enough substance to repay a fresh lead's context, roughly an hour or more of work.
 
-### Sizing the team (your judgment, no fixed cap)
+Size the slice by quota: the sibling's share of the work tracks its window's headroom (projected surplus) against yours. Rebalance at slice boundaries by giving the next slice to the lead whose window has more to spend. Never interrupt work in progress just to rebalance.
 
-- **Workers at the selected level scale with the plan's real parallelism.** Spawn one Luna/Haiku (base) or Sol/Sonnet (strong) per independent task that has its own files, a clear acceptance check, and enough substance to pay for a fresh session (a new session costs about 16k tokens before any work). Use zero workers for work you can verify directly, and one for strictly sequential work. Three tiny edits are one task, not three workers.
-- Do not spawn workers whose tasks would wait on each other or share a file; sequence those through one worker instead. When tasks outnumber good parallel slots, run waves: integrate a worker's delta, then give it the next task with a new assignment (its baseline has advanced).
-- Balance providers by their current 5h quota as described below, keeping the other provider available for cross-review; a fixed 50/50 worker split is not required. `spawn.sh` places panes for you: it splits the largest pane the run owns along its longer side and opens a new tab ("<repo> 2", ...) when no pane has room (`HERDR_DUO_MIN_PANE_COLS`, default 70, and `HERDR_DUO_MIN_PANE_ROWS`, default 18). It never splits your pane or panes the run did not create.
-- **In base runs, at most one strong worker or reviewer is live.** `spawn.sh` and `escalate.sh` enforce this; the lead does not occupy the slot. Use it for escalation or a task/review needing cross-cutting reasoning. **In strong runs, Sol/Sonnet workers and reviewers can run in parallel** under the same ownership, sizing and quota rules as base workers. Selecting strong is sufficient reason to use that level, even for mechanical tasks; do not silently downgrade it.
-- **Reviewers** are read-only and on demand, as set out in `references/review.md`. Close them once their report is in.
-- Reuse live sessions at the selected level for follow-ups (`dispatch.sh --message`) and fix rounds (`dispatch.sh --fix`). Close sessions you will not reuse.
-- Apply the quota policy below first. When current 5h headroom is similar or unknown, prefer Claude (Haiku or Sonnet at the selected level) for localized, mechanical, test and doc work, and Codex (Luna or Sol) for multi-file logic with invariants or debugging with an unclear root cause. A change is reviewed by the provider that did not write it. If a provider is unavailable or rate-limited, send its work to the other at the same level.
-- Do not implement routine work yourself. If the workers and the escalation fail, finish the deterministic checks and report the blocker.
+**3. No separable slice:** do the task alone. `run-init.sh` records which subscription led, and `quota.py suggest` recommends starting the **next** task on the other one when headroom is similar. Balance then happens across tasks.
 
-### Balancing provider quota
+**4. Helpers are free.** Open as many as the task can use, from either subscription. Good uses:
+- searching and reading code or logs;
+- running and fixing targeted tests;
+- mechanical or repetitive edits;
+- documentation;
+- reviewing small diffs;
+- parallel independent pieces.
 
-The lead balances workers using **only the remaining quota in each provider's current 5-hour window**. Never use weekly quota, weekly reset times or a weekly consumption target to choose a provider, reserve capacity or throttle workers. The goal is to balance consumption of the current windows and extend useful session time as far as possible.
+Route each helper to `quota.py suggest --for helper --mine <your provider>`, which the hook and the panel also show. It favors the window that would otherwise go unused, and keeps a reserve (`HERDR_DUO_LEAD_RESERVE_PCT`, default 30%) in your own window for your own work. Choose any model with `spawn.sh --model`, for example a stronger model for one hard sub-problem. A helper costs a fresh session, so a few tiny edits are one helper, not several.
 
-- Before allocating workers and at each new wave, compare the latest available 5h remaining percentages shown by the panel or Herdr usage data. If Codex has more headroom, favor Codex workers (Luna in base runs, Sol in strong runs or permitted escalation); if Claude has more, favor Claude workers (Haiku in base runs, Sonnet in strong runs or permitted escalation). Reassess as the windows are consumed or reset.
-- Quota preference takes precedence over the task-type defaults above, but does not justify extra workers, strong-tier escalation, changing the lead's model or skipping required cross-review. Allocate useful work to the provider with more headroom; do not manufacture work to equalize percentages.
-- Apply changes to new assignments at safe task boundaries. Reuse suitable live sessions and let in-flight work finish rather than restarting it merely to rebalance. If either 5h value is unknown, do not substitute weekly data or invent a value; use task fit and available sessions until current-window data is available.
-- An actual usage-limit error still makes a provider unavailable, whatever its cause. Follow `references/recovery.md`; this is failure recovery, not weekly-quota planning.
+Folder trust: Codex trusts at the repository root, so once the user trusts a repository every Codex session there starts without a dialog. Claude Code asks once per worktree path, and paths are stable per repository and session name. Reuse a small set of Claude helper names (`haiku1`, `haiku2`, ...) so the user answers that dialog once per name, not once per task. When a helper stops at a dialog, never answer it: tell the user the pane, or route the work to a Codex helper.
 
-### Escalation to Sol or Sonnet
+**Effort parity.** The sibling, and any handoff successor, run at the effort the principal was started with: start at low and the sibling is low, start at medium and it is medium. `run-init.sh` reads it from the exact session (pass `--lead-effort` when it cannot) and `spawn.sh` applies it, translated per CLI (Codex `ultra` becomes Claude `max`). Helpers always run at `xhigh` (`HERDR_DUO_HELPER_EFFORT`). `spawn.sh --effort` overrides either for one session.
 
-Escalation is disabled in strong runs. The ceiling for workers and reviewers is Sol/Sonnet. A worker that starts strong gets at most one fix round; if it still fails, stop and report the blocker. There is no escalation to Astra/Opus or extra top-tier leader to solve a worker failure.
+**5. No escalation ladder.** If a helper fails the same problem twice, take it yourself or give it to a stronger model. Do not loop.
 
-Escalate a base worker's task only when one of these holds:
+**6. Skills from either side.** An assignment may tell a session to use any skill installed for its provider (`~/.claude/skills` for Claude, `~/.agents/skills` for Codex). Name the skill and what it is for.
 
-1. **Two failed rounds on the same problem**: the initial round plus one `dispatch.sh --fix` round, each failed by its own report, by your checks, or by a blocking review finding. A failure caused by your assignment (missing context, wrong ownership, unclear criteria) does not count: fix the assignment and resend.
-2. **Cross-cutting reasoning** turned out to be required mid-task (`--cross-cutting`, with the evidence in `--reason`).
+**7. One writer per file, across both teams.** The principal assigns ownership when it splits the work. Shared contracts, lockfiles, schemas and generated files get exactly one writer.
 
-Never escalate mechanical work, test adjustments or documentation; base workers handle those well. For those, after two failed rounds, stop and report.
+## Quota guardian
 
+Every lead guards both 5h windows. The sources need no live pane:
+- **Claude:** the Herdr usage bar.
+- **Codex:** its newest session rollout. A window whose reset has passed reads as unused.
+
+For each window, `quota.py` reports what is left, the reset time, the burn rate, and the **projected surplus**: what would still be unused at reset at the current pace.
+
+- With the hook installed, every prompt you receive starts with that line. During a long turn, the hook speaks again on a tool call when a warning or alert is new. Without the hook, run `$SKILL_DIR/scripts/quota.py line`.
+- Give new work to the window with the larger surplus. Spend a window that resets soon with quota left. Do not manufacture work to equalize percentages.
+- **QUOTA LOW** (`HERDR_DUO_LEAD_WARN_PCT`, default 10%):
+  - **principal:** checkpoint with `progress.sh note`, then pass the role at a safe point with `handoff.sh --run $RUN --reason "quota low"` (not in the middle of an integration);
+  - **sibling:** stop at a safe point and send your report block with `STATUS: partial`.
+
+## The sibling lead
+
+**Principal, to open the sibling:**
 ```bash
-$SKILL_DIR/scripts/escalate.sh --run $RUN --name <worker> --reason "<what failed twice, in one line>"
+$SKILL_DIR/scripts/spawn.sh --run $RUN --name <opus|sol> --provider <the other subscription> --level sibling --deps-auto
 ```
+Write `$RUN/<name>/assignment.md` from the sibling template in `references/assignments.md`. Then dispatch it in the background with a long timeout (`dispatch.sh --run $RUN --name <name> --timeout-min 240`) and keep working on your own part. Integrate its slice like any delta: `delta.sh`, review, `integrate.sh`.
 
-It saves the failed attempt as a patch, closes the base session, and starts a new, dedicated strong session in the same worktree (by default from the other provider, a different model family). Write its assignment from the escalation template in `references/assignments.md`: only the failing problem, narrowly scoped. Dispatch it, review it like any change (the reviewer is the other provider), integrate it, and close it with `cleanup.sh` right away, so it does not stay live and use up quota. A strong session gets at most one fix round. If it still fails, stop and report the blocker; there is no further escalation.
+**Sibling, when you are one:**
+- You lead your slice inside your own worktree, under the same rules as the principal, except that:
+  - you never touch the user's checkout;
+  - you never commit;
+  - you never open another sibling.
+- Your helpers start from your worktree with `--base-from <your name>`. You integrate them into your worktree with `integrate.sh`, which refuses any other target.
+- You dispatch and clean up only the sessions you opened.
+- Finish with the report block from your assignment.
+
+`status.sh` tells each pane what it is ("you are the principal" or "you are the sibling").
+
+**Cross-review comes for free.** Each lead belongs to the other subscription, so each reviews the other's medium- and high-risk deltas: send the reviewer template with `dispatch.sh --message`. For your own changes as principal, write `git -C $REPO diff > $RUN/lead.patch` and send that path.
+
+**If the sibling's window runs out,** the panel alerts the principal. Collect its slice with `delta.sh --state <its state_dir>`, integrate what is sound, take or reassign the rest, and reopen a sibling after its reset if a slice remains.
 
 ## Panel and lead handoff
 
-The panel is a script, not an agent: it uses no quota. It shows your checklist, what you are doing now, every session, the quota left per provider, the last checks, git and CI. It also watches your own quota:
+The panel is a script, not an agent, and uses no quota. It shows:
+- your checklist and what you are doing now;
+- both 5h windows and where new helper work should go;
+- both leads, and every helper grouped by the lead that owns it;
+- the last checks, git and CI.
 
-The initial lead model defines a persistent handoff band: **Opus ↔ Astra** or **Sonnet ↔ Sol 6.1**. `run-init.sh` records the initial model, band and both destinations in `lead.json`; subsequent handoffs and manual adoption preserve that band. A later model switch in the current pane does not redefine the initial choice. The panel and `status.sh` show the current model, band and destinations. The recorded worker level and base-to-strong escalation rules remain independent of this lead band.
+New panes are placed automatically into the run's balanced layout: the largest owned pane is split along its longer side, the principal's pane is never split, the caller's tab is tried first, and a new tab opens when nothing fits.
 
-Destination defaults are `HERDR_DUO_SOL_MODEL` / `HERDR_DUO_SONNET_MODEL` for Sonnet–Sol and `HERDR_DUO_LEAD_ASTRA_MODEL` (default `gpt-6-astra`) / `HERDR_DUO_LEAD_OPUS_MODEL` (default `claude-opus-5-5`) for Opus–Astra. Explicit `HERDR_DUO_LEAD_CODEX_MODEL` / `HERDR_DUO_LEAD_CLAUDE_MODEL` override their provider's destination; `HERDR_DUO_LEAD_CODEX_EFFORT` defaults to the configured Sol effort. Destinations and effort are snapshotted at run creation, so subsequent configuration changes apply to new runs. An unknown model leaves its band unresolved: do not silently choose a lower band. Resolve it with `handoff.sh --run $RUN --reason "quota low" --lead-model <original model>` before switching. Old runs without destination snapshots retain the previous configured Sol/Sonnet behavior, shown as `legacy`.
+The panel watches both leads:
+- **Principal:** an idle principal that has run out (`HERDR_DUO_LEAD_HANDOFF_PCT`, default 2%, or a limit message on its screen) is handed off automatically. Before handing off, the successor's quota is checked.
+  - A **live sibling is promoted** to principal: no new session starts, and it already knows the task.
+  - Otherwise a fresh lead of the pair model starts below the old pane.
+  - A provider that ran out waits for its real reset. When both are out, the run is stranded and resumes when either window resets.
+  - `HERDR_DUO_LEAD_FALLBACK=off` makes the panel only warn.
+- **Sibling:** a sibling that runs out raises an alert for the principal.
+- **Lead fence:** a lead pane is never typed into except to deliver a handoff prompt. After a handoff, the old principal is fenced: every script refuses it. Stop when told you are no longer a lead.
 
-- At `HERDR_DUO_LEAD_WARN_PCT` (default 10%) of your 5h quota left, scripts you run print **LEAD QUOTA LOW**. Then write a `progress.sh note` with your next steps, and pass the lead at a safe point (not in the middle of an integration): `handoff.sh --run $RUN --reason "quota low"`. After a handoff you are no longer the lead: stop, and do nothing more in this run.
-- If you run out while idle (at most `HERDR_DUO_LEAD_HANDOFF_PCT` left, or a limit message on your screen), the panel hands off by itself. The successor is a fresh session of the other provider in the recorded band (`HERDR_DUO_LEAD_FALLBACK=auto|codex|claude|off` selects the provider, not the band). It opens below your pane and resumes the run. A provider that already ran out in this run is not tried again for 5 hours; then the run waits for the user. If the selected model is unavailable, report the failure rather than switching bands automatically.
-- Your pane is never typed into. A lead fence keeps an old lead from acting: every script that changes the run refuses any pane but the current lead.
-
-The handoff is only as good as what you record. Keep the panel and the successor informed with `progress.sh`; each call costs one short command:
+Keep the panel and any successor informed. Each call is one short command:
 
 ```bash
-$SKILL_DIR/scripts/progress.sh --run $RUN plan "<step 1>" "<step 2>" ...   # once, after planning; again if the plan changes
+$SKILL_DIR/scripts/progress.sh --run $RUN plan "<step 1>" "<step 2>" ...   # after planning; again if the plan changes
 $SKILL_DIR/scripts/progress.sh --run $RUN step <n> active|done|failed
 $SKILL_DIR/scripts/progress.sh --run $RUN check "<label>" <exit code> "<summary, e.g. 256/268 passed>"
 $SKILL_DIR/scripts/progress.sh --run $RUN note "<decision or next step a successor must know>"
 ```
 
-Write a `note` at each milestone: a plan decision, an integration, a wave finished, a dispatch you are about to wait on. Record a genuinely required unanswered decision as `waiting for user: <question>` with the reason it blocks work. Optional questions and already authorized actions must not become blockers; record the chosen assumption or existing authorization instead. Write steps in the user's language.
+Write a `note` at each milestone: a plan decision, a slice handed to the sibling, an integration, a dispatch you are about to wait on. A genuinely required unanswered decision is recorded as `waiting for user: <question>` with the reason it blocks work. Optional questions and already authorized actions must not become blockers. Write steps in the user's language.
 
 ### Resume a run
 
-When you were started to resume a run (a handoff prompt, or the user asks after compaction or a stop):
+When you were started or promoted to resume a run (a handoff prompt, or the user asks after compaction or a stop):
 
-1. Run `preflight.sh`, then `status.sh --run $RUN`. A handoff successor is already the lead (`you are the lead`). Only if it says `you are NOT the lead` and the user asked you to take over, run `handoff.sh --run $RUN --adopt`.
-2. Read `$RUN/handoff.md`, `progress.json`, `state.json` and `$RUN/goal.json` if present. The successor inherits the original task, user constraints and recorded authorization, including commit/push permissions and `state.json.worker_tier` (base for old runs); a handoff is a continuation, not a new approval request. These files are the durable run context; do not re-plan finished steps, and never spawn duplicates of live workers.
-3. Run `guard.sh verify --run $RUN`.
-4. Inspect every owned live worker pane and its assignment/report, including workers marked settled when a follow-up may still be running. Existing terminal processes belong to the run, not to the previous lead session. Reattach dispatched work with `dispatch.sh --run $RUN --name <name> --collect` in the background: it sends nothing, waits, and prints the report. Old shell-tool session IDs are not transferable; use durable files and Herdr pane state to recover their outcome. Never restart a suite, resend an assignment or spawn a replacement before checking the existing process.
-5. Reconcile any `waiting for user` note against the latest request and existing authorization. Only a still-required missing decision or actual approval dialog blocks dependent work; continue independent work. Otherwise write a takeover note and immediately execute the next unfinished action. A status update or background dispatch is not the end of the task: collect results, resolve findings, validate, integrate and perform authorized delivery/cleanup until the acceptance criteria are met. Do not end with an offer to continue or wait for the user merely because leadership changed.
-6. Restore goal continuity as described below; goal-tool availability must never block the work.
+1. Run `preflight.sh`, then `status.sh --run $RUN`. A successor or promoted sibling is already the principal (`you are the principal`). Only if it says `NOT a lead` and the user asked you to take over, run `handoff.sh --run $RUN --adopt`.
+2. Read `$RUN/handoff.md`, `progress.json`, `state.json` and `$RUN/goal.json` if present. You inherit the original task, the user's constraints and the recorded authorization, including commit and push. A handoff is a continuation, not a new approval request. Do not re-plan finished steps or spawn duplicates of live sessions.
+3. **If you were promoted from sibling,** bring your slice to a safe point first. Your former record now shows `promoted`, and your worktree still holds your slice: integrate it into the user's checkout like any delta (`delta.sh --state $RUN/<your former name>`, then `integrate.sh`). Every helper of the run is now yours.
+4. Run `guard.sh verify --run $RUN`.
+5. Inspect every live session and its assignment or report. Reattach dispatched work with `dispatch.sh --run $RUN --name <name> --collect` in the background: it sends nothing, waits, and prints the report. Never restart a suite, resend an assignment or spawn a replacement before checking the existing process.
+6. Reconcile `waiting for user` notes against existing authorization, write a takeover note, and continue the next unfinished action through validation, integration and authorized delivery and cleanup. Do not stop after a status update or a background dispatch.
+7. Restore goal continuity as described below. Goal-tool availability must never block the work.
 
 ### Goal continuity across providers
 
-The portable goal is `state.json.goal` plus `progress.json` and `$RUN/goal.json`. `handoff.sh` automatically captures the old leader's native goal by its exact Herdr session ID into `$RUN/goal-native.json`: read-only Codex SQLite or Claude transcript records, with portable fallback if the private format is unavailable. It never types into the old leader. Before delivering the resume prompt, it restores an active goal with `/goal <objective>` in the ready successor and checks the new session record. The command also points at `$RUN/lead-resume.md`, because setting a goal immediately starts work. `$RUN/goal-transfer.json` records verification or fallback; an ambiguous submission is not repeated. A plain task title never implies permission to create a native goal. Paused, blocked, completed or budget-exhausted goals are not reactivated. A native `usage_limited` goal can resume when switching to the other provider: provider quota exhaustion is the reason for that handoff, and does not cancel the task or renew its token budget. Codex `/goal` cannot carry a token budget: a budgeted goal uses the successor's native tool with only the remaining allowance, rather than silently becoming unlimited. Provider formats are private; recovery must still work when they change. When the user explicitly requests a goal or goal inheritance, record its objective, acceptance criteria, remaining work, status and native budget snapshot (if available) with:
+The portable goal is `state.json.goal` plus `progress.json` and `$RUN/goal.json`. When a **fresh** successor starts, `handoff.sh` captures the old lead's native goal read-only into `$RUN/goal-native.json`, restores an active goal with `/goal` in the successor, and records the outcome in `$RUN/goal-transfer.json`. Provider formats are private, so this is best effort: on failure, the ordinary resume prompt and the portable checkpoint carry the task. A promoted sibling keeps its own session; continue the portable goal there.
 
+When the user explicitly asks for a goal, record it and keep it current at milestones:
 ```bash
-$SKILL_DIR/scripts/progress.sh --run $RUN goal '<JSON object>'
+$SKILL_DIR/scripts/progress.sh --run $RUN goal '<JSON object with objective, acceptance criteria, remaining work, status>'
 ```
+Never reactivate paused, blocked, completed or budget-exhausted goals. Carry over a known remaining token budget; never reset it to the original total. Mark a goal complete only when the whole delivery, including required CI and cleanup, meets its criteria.
 
-Keep this snapshot current at milestones and before a planned handoff. Include user constraints/authorization references and concrete next actions; never include credentials or private task data unnecessarily. The command accepts an object and stamps `updated_at`; it does not change native goal state. Automatic quota handoff relies on the last durable checkpoint, so update before quota exhaustion.
+## Workflow for delegated work
 
-On takeover, query an available native goal tool first. Continue an existing matching goal; do not duplicate or complete it because the leader changed. If no active goal exists, recreate it only when the user explicitly requested a goal or its inheritance, using the durable objective and remaining criteria. Carry over a known remaining token budget, never reset it to the original total; if unavailable, preserve the recorded limit and usage as constraints without inventing a fresh allowance. Respect an explicit user pause. If the provider has no equivalent tool, maintain the portable goal and continue the same task autonomously. Mark the portable/native goal complete only after the entire delivery meets its criteria, including required CI and cleanup. A working worker, background test, review finding or incomplete delivery means work remains.
-
-## Workflow
-
-1. **Plan.** Write acceptance criteria, dependencies and file ownership per task. Each file has one writer. Shared contracts, lockfiles, schemas and generated files get exactly one writer. Record the steps with `progress.sh plan`.
-2. **Spawn** each implementer: `$SKILL_DIR/scripts/spawn.sh --run $RUN --name api --provider codex --role implementer --deps-auto`. Then the others the same way; placement is automatic (pass `--split-from <pane> --direction right|down` only to override it). The recorded worker level is applied automatically. Give each worker a short task-based name (`api`, `docs`). Workers start from your current checkout, including uncommitted work; secret-looking files are skipped. Use `--from-head` to start from HEAD only. If spawn reports **STARTUP DIALOG**, see `references/recovery.md`.
+1. **Plan.** Write acceptance criteria and file ownership per slice or helper task, and record the steps with `progress.sh plan`.
+2. **Spawn:** `$SKILL_DIR/scripts/spawn.sh --run $RUN --name <task> --provider <suggested> [--model M] --deps-auto`. Use short task-based names. Sessions start from the user's checkout, including uncommitted work (secret-looking files are skipped); `--from-head` starts from HEAD only, and `--base-from <name>` starts from that session's worktree. If spawn reports **STARTUP DIALOG**, see `references/recovery.md`.
 3. **Guard:** `$SKILL_DIR/scripts/guard.sh snapshot --run $RUN`.
-4. **Assign.** Write `$RUN/<name>/assignment.md` from `references/assignments.md`.
-5. **Dispatch** with one background command: `$SKILL_DIR/scripts/dispatch-all.sh --run $RUN`. It runs every worker in parallel and prints reports in order; pass worker names to dispatch only a subset. On hosts without background notifications, run it in the foreground. If unavailable, run `dispatch.sh --run $RUN --name <name>` for each worker in parallel.
-6. **Settle.** Run `guard.sh verify`. Then compute ground truth with `delta.sh --state <state_dir> --out <state_dir>/delta.patch`, where `<state_dir>` is the one `spawn.sh` printed (`$RUN/<name>`, or the original worker's directory for an escalated session). Judge the delta, never the report alone. A rejected delta goes back as `dispatch.sh --fix`; two failed rounds trigger the escalation or stop rule above, according to the worker's actual tier.
-7. **Review** per `references/review.md`, sized to the risk of the change.
+4. **Assign:** write `$RUN/<name>/assignment.md` from `references/assignments.md`.
+5. **Dispatch** in the background: `$SKILL_DIR/scripts/dispatch-all.sh --run $RUN` dispatches every live session you own in parallel and prints their reports in order. Pass names for a subset, or use `dispatch.sh --name <name>` for one.
+6. **Settle.** Run `guard.sh verify`, then `delta.sh --state <state_dir> --out <state_dir>/delta.patch`. Judge the delta, never the report alone. A rejected delta goes back as `dispatch.sh --fix`.
+7. **Review** per `references/review.md`, sized to risk.
 8. **Integrate, validate and finish** per `references/integration.md`.
 
 ## Invariants (and why)
 
-- **Never answer a dialog.** Never type into a pane that shows a trust or approval dialog. The Enter of a prompt would answer it on the user's behalf. Both scripts check the screen first, because Herdr can report such a pane as idle.
-- **Never overwrite later edits.** Never overwrite a file that changed after its baseline; those are the user's edits. `integrate.sh` refuses such conflicts.
+- **Never answer a dialog.** Never type into a pane that shows a trust or approval dialog: the Enter of a prompt would answer it on the user's behalf. The scripts check the screen first, because Herdr can report such a pane as idle.
+- **Never overwrite later edits.** `integrate.sh` refuses a file that changed after its baseline; those changes belong to the user or to another integration.
 - **"Done" is not proof.** A verified delta, a clean guard check, and checks you ran yourself are the proof.
-- **Ports, databases and full suites run once.** Workers run fast, targeted checks. Anything that binds fixed ports, uses shared databases or services, or runs full or end-to-end suites runs once, by you, after integration, because concurrent runs collide.
-- **No team state in the repository.** Team state lives under `$RUN`, never in tracked files.
+- **Ports, databases and full suites run once,** by the principal, after integration, because concurrent runs collide. Sessions run fast, targeted checks.
+- **No team state in the repository, and none left behind.** It lives under `$RUN`, and `cleanup.sh --run $RUN --finish` deletes `$RUN` once every session is cleaned. `cleanup.sh --prune` removes leftovers of abandoned runs; it never deletes a worktree.
+- **One principal, at most one sibling.** Only the principal touches the user's checkout, commits and pushes. A sibling acts only on its slice and on the sessions it opened.
+- **Only 5h windows.** Weekly quota never enters a decision.
 
-- **Base runs have one strong slot; strong runs scale the selected tier.** Close exceptional strong sessions in base runs after their narrow problem; strong runs may reuse their regular Sol/Sonnet workers. No worker/reviewer escalates above Sol/Sonnet; the lead band is independent.
-- **One lead per run.** Only the pane in `lead.json` acts on the run. After a handoff, the previous lead stops.
+`$SKILL_DIR/scripts/status.sh --run $RUN` prints both windows, both leads, every session grouped by owner, alerts, and what still needs a decision. Use it instead of reading `state.json`.
 
-`$SKILL_DIR/scripts/status.sh --run $RUN` prints every session with its tier, status and fix rounds, the live strong sessions, the escalations, and what still needs a decision. Use it instead of reading `state.json`.
-
-References: `assignments.md` (assignment, escalation and reviewer templates), `review.md` (risk tiers, cross-review, the third reviewer), `integration.md` (integrate, validate, commit, push, cleanup, report), `recovery.md` (dialogs, blocked or stalled sessions, guard violations, quota, panel and handoff, compaction).
+References:
+- `assignments.md`: sibling, helper and reviewer templates;
+- `review.md`: risk tiers and cross-review;
+- `integration.md`: integrating in two levels, validate, commit, push, cleanup, report;
+- `recovery.md`: dialogs, stalled sessions, guard violations, quota, panel and handoff, compaction.

@@ -1,4 +1,4 @@
 interface:
   display_name: "Herdr Duo"
-  short_description: "Coordinate selectable worker levels inside Herdr"
-  default_prompt: "Use $herdr-duo for this task and ask which worker level to use."
+  short_description: "Split one task across Claude and Codex inside Herdr"
+  default_prompt: "Use $herdr-duo for this task."

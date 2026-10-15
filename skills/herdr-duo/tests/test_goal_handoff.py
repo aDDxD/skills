@@ -27,7 +27,8 @@ class GoalFixture:
         self.codex.mkdir()
         self.claude = self.root / 'claude'
         self.env = patch.dict(os.environ, {'CODEX_HOME': str(self.codex),
-                                          'CLAUDE_CONFIG_DIR': str(self.claude)})
+                                          'CLAUDE_CONFIG_DIR': str(self.claude),
+                                          'HERDR_DUO_STATE_ROOT': str(self.root / 'state')})
         self.env.start()
         self.addCleanup(self.env.stop)
 

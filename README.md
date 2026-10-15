@@ -7,7 +7,7 @@ with a `SKILL.md` that Claude Code and other Agent Skills clients can load.
 
 | Skill | Description |
 |---|---|
-| [herdr-duo](skills/herdr-duo) | Orchestrates development inside Herdr: delegates to as many Codex and Claude Code workers at the chosen level (Luna/Haiku or Sol/Sonnet) as the task can use in parallel, escalates hard problems in base flows to one dedicated Sol or Sonnet session, and keeps isolated worktrees, cross-review and verified integration. |
+| [herdr-duo](skills/herdr-duo) | Runs one task across your Claude and Codex subscriptions inside Herdr: the lead you start (Opus or Sol) does the main work, hands a separable slice to its sibling lead on the other subscription so both 5-hour windows are used evenly, and both leads open as many Luna/Haiku helpers as the task can use. Keeps a quota and progress panel, automatic lead handoff, isolated worktrees, cross-review and verified integration. |
 
 ## Install
 
@@ -55,8 +55,12 @@ Behaviour:
 - **Herdr**, with `herdr`, `git` and `python3` on `PATH`. The skill's preflight requires `HERDR_ENV=1`, so run it from a Herdr pane.
 - **Codex CLI**, for Codex implementers and reviewers.
 - **Claude Code CLI**, for Claude implementers and reviewers.
-- Strong workers/reviewers use Sol or Sonnet, configured through `HERDR_DUO_SOL_MODEL` and `HERDR_DUO_SONNET_MODEL` in `~/.config/herdr-duo/config.env`; choose Luna/Haiku or Sol/Sonnet once at the start of each flow. Both levels scale with independent tasks. Base runs allow one exceptional Sol/Sonnet session at a time; strong runs have no further escalation to Astra/Opus. The choice is recorded with `run-init.sh --worker-tier base|strong`, independently of the lead, and preserved across handoffs.
-- Each run opens a status panel next to the lead. When the lead runs out of quota, the successor preserves its initial band: **Opus ↔ Astra** or **Sonnet ↔ Sol 6.1**. Model detection uses the exact lead session; `run-init.sh --lead-model MODEL` supplies the actual model when detection is unavailable. Configure Opus/Astra through `HERDR_DUO_LEAD_OPUS_MODEL` / `HERDR_DUO_LEAD_ASTRA_MODEL`; explicit `HERDR_DUO_LEAD_CODEX_MODEL` / `HERDR_DUO_LEAD_CLAUDE_MODEL` override destinations. Set `HERDR_DUO_LEAD_FALLBACK=off` to only warn. Destinations are recorded once per run; old runs keep their legacy fallback.
+- The lead pair is fixed: **Opus** (Claude) and **Sol** (Codex), set with `HERDR_DUO_OPUS_MODEL` and `HERDR_DUO_SOL_MODEL` in `~/.config/herdr-duo/config.env`. Astra is not used. The pair is the sibling lead and the handoff destination. Helpers default to Luna and Haiku (`HERDR_DUO_LUNA_MODEL`, `HERDR_DUO_HAIKU_MODEL`); a lead can choose any model per helper.
+- Effort parity: the sibling lead and any handoff successor run at the effort you started the principal with; Luna and Haiku helpers always run at `xhigh` (`HERDR_DUO_HELPER_EFFORT`).
+- No run files are left behind: `cleanup.sh --run <RUN> --finish` deletes the run directory once every session is cleaned, and `cleanup.sh --prune` removes leftovers of abandoned runs.
+- Only the 5-hour windows count; weekly quota is ignored. Claude's window is read from the Herdr usage bar (`~/.claude/herdr-usagebar/claude-limits-latest.json`) and Codex's from its newest session rollout, so both are known without an open pane. `scripts/quota.py line` prints them with the projected unused share at reset.
+- Each run opens a status panel next to the lead with progress, both windows, both leads and their helpers. When the principal lead runs out, a live sibling is promoted; otherwise a fresh lead of the pair starts. A provider that ran out waits for its real reset. Set `HERDR_DUO_LEAD_FALLBACK=off` to only warn.
+- Optional: `~/.agents/skills/herdr-duo/scripts/install-hooks.sh` adds a quota guardian hook to Claude Code and Codex (UserPromptSubmit and PostToolUse). It is silent outside a herdr-duo run, and gives each lead the quota line and low-quota warnings even during long turns. `--uninstall` removes it.
 
 Run `~/.agents/skills/herdr-duo/scripts/preflight.sh` to check these. It is read-only.
 

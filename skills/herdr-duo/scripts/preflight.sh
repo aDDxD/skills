@@ -40,8 +40,12 @@ for a in agents:
 
 echo "herdr_env: ok  server: ${server:-unknown}"
 echo "kinds: codex=$(has_kind codex) claude=$(has_kind claude)"
-echo "luna (codex):   flags=$codex_ok  model=$HERDR_DUO_LUNA_MODEL effort=$HERDR_DUO_LUNA_EFFORT access=$HERDR_DUO_LUNA_ACCESS"
-echo "haiku (claude): flags=$claude_ok  model=$HERDR_DUO_HAIKU_MODEL mode=$HERDR_DUO_HAIKU_MODE"
+echo "codex:  flags=$codex_ok  lead=$HERDR_DUO_SOL_MODEL helper=$HERDR_DUO_LUNA_MODEL access=$HERDR_DUO_CODEX_ACCESS"
+echo "claude: flags=$claude_ok  lead=$HERDR_DUO_OPUS_MODEL helper=$HERDR_DUO_HAIKU_MODEL mode=$HERDR_DUO_CLAUDE_MODE"
+python3 "$(dirname "$(realpath "$0")")/quota.py" line 2>/dev/null || echo "5h quota: unavailable"
+hooks=no
+grep -q 'herdr-duo/scripts/hook.py' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" 2>/dev/null && hooks=yes
+echo "quota hook (claude): $hooks  (install: $(dirname "$(realpath "$0")")/install-hooks.sh)"
 echo "config: $( [ -f "$HERDR_DUO_CONFIG" ] && echo "$HERDR_DUO_CONFIG" || echo "defaults (no $HERDR_DUO_CONFIG)" )"
 echo "caller_pane: ${HERDR_PANE_ID:-unknown}  workspace: ${HERDR_WORKSPACE_ID:-unknown}  tab: ${HERDR_TAB_ID:-unknown}"
 echo "live_agents:"
@@ -50,6 +54,6 @@ if [ -n "$live" ]; then printf '%s\n' "$live" | sed 's/^/  /'; else echo "  none
 if [ "$(has_kind codex)" = no ] && [ "$(has_kind claude)" = no ]; then
   fail "herdr advertises neither codex nor claude (advertised: ${kinds:-none})."
 fi
-[ "$codex_ok" = yes ] || echo "WARN: Luna unavailable or its flags were not confirmed; route work to Haiku." >&2
-[ "$claude_ok" = yes ] || echo "WARN: Haiku unavailable or its flags were not confirmed; route work to Luna." >&2
+[ "$codex_ok" = yes ] || echo "WARN: Codex unavailable or its flags were not confirmed; run the task on Claude only." >&2
+[ "$claude_ok" = yes ] || echo "WARN: Claude Code unavailable or its flags were not confirmed; run the task on Codex only." >&2
 exit 0

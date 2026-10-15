@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Find room for a new session pane and create it. Prints "PANE_ID TAB_ID".
 
-Splits the largest pane this run owns (workers, reviewers, and the status panel in the
-lead's tab) along its longer side, so panes stay balanced instead of piling up next to
-the lead. A split is allowed only when both halves stay at least MIN_COLS x MIN_ROWS
-(the panel keeps PANEL_ROWS). The lead's pane and panes the run does not own are never
-split. When nothing fits, it opens a new tab ("<repo> 2", "<repo> 3", ...) for further sessions.
+Splits the largest pane this run owns (sibling, helpers, reviewers, the status panel) along
+its longer side, so panes stay balanced instead of piling up next to a lead. A split is
+allowed only when both halves stay at least MIN_COLS x MIN_ROWS (the panel keeps
+PANEL_ROWS). The principal's pane and panes the run does not own are never split. The
+caller's tab is tried first, so a sibling's helpers open next to it. When nothing fits, it opens a new tab ("<repo> 2", "<repo> 3", ...) for further sessions.
 
 Usage: place.py RUN_DIR CWD"""
 import fcntl, json, os, subprocess, sys
@@ -50,16 +50,13 @@ def main():
     if os.path.exists(os.path.join(run, "lead.json")):
         lead = json.load(open(os.path.join(run, "lead.json")))
     live = [r for k in ("workers", "reviewers") for r in state.get(k, [])
-            if r.get("pane") and r.get("status") not in ("cleaned", "escalated")]
-    owned = {r["pane"]: MIN_ROWS for r in live}
+            if r.get("pane") and r.get("status") not in ("cleaned", "escalated", "promoted")]
+    owned = {r["pane"]: MIN_ROWS for r in live if r["pane"] != lead.get("pane")}
     if lead.get("panel_pane"):
         owned[lead["panel_pane"]] = PANEL_ROWS
 
-    # Tabs to try, in order: the lead's tab, then the tabs this run opened.
-    probes = []
-    anchor = lead.get("pane") or os.environ.get("HERDR_PANE_ID")
-    if anchor:
-        probes.append(anchor)
+    # Tabs to try, in order: the caller's tab, the principal's tab, then the tabs this run opened.
+    probes = [p for p in (os.environ.get("HERDR_PANE_ID"), lead.get("pane")) if p]
     for tab in state.get("tabs", []):
         probes += [r["pane"] for r in live if r.get("tab") == tab][:1]
     seen = set()

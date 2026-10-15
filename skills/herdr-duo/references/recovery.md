@@ -12,7 +12,7 @@ When they confirm they have answered it, run:
 $SKILL_DIR/scripts/spawn.sh --run $RUN --name <name> --recheck
 ```
 
-Trust is remembered per path, and worktree paths are stable per repository and worker name, so this is normally a one-time event. Codex applies trust at the main repository root, so a repository the user already trusts in Codex does not ask. Claude Code asks once per worktree path. If the user declines, close that pane and route its work to the other provider.
+Trust is remembered per path, and worktree paths are stable per repository and session name, so this is normally a one-time event. Codex applies trust at the main repository root, so a repository the user already trusts in Codex does not ask. Claude Code asks once per worktree path. If the user declines, close that pane and route its work to the other subscription.
 
 ## dispatch.sh exit codes
 
@@ -26,17 +26,20 @@ Trust is remembered per path, and worktree paths are stable per repository and w
 
 A ref, HEAD, branch or git config changed. It was either a worker, or the user working in parallel. Stop integrating. Show the user the violation lines, and find out which worker did it from its transcript. Do not undo anything yourself, because reverting refs is destructive. Continue only after the user decides.
 
-## Escalation refused (`escalate.sh` exits 2)
+## A session failed twice
 
-- "no failed fix round yet": send one `dispatch.sh --fix` round first, or use `--cross-cutting` with evidence.
-- "strong session ... is still live": finish that session's problem, integrate it and run `cleanup.sh` on it, then escalate. This single-slot rule applies to base runs; strong runs allow parallel Sol/Sonnet sessions.
-- "already strong": strong sessions do not escalate further. Report the blocker.
+Take the problem yourself, or continue in the same worktree with a stronger model: `spawn.sh --run $RUN --name <new> --provider <p> --model <M> --continue-from <name>` (close the old pane first). Do not loop on fix rounds.
 
-If `escalate.sh` fails after closing the base pane, the work is still in the worktree and the attempt patch is saved. Start the strong session directly: `spawn.sh --run $RUN --name <new> --provider <p> --role implementer --tier strong --continue-from <worker>`.
+## Ownership refusals
+
+"belongs to 'lead'" or "only the principal": a sibling acts only on the sessions it opened and never on the user's checkout, `--finish`, commit or push. Report to the principal instead. "not a lead of this run": this pane was handed off or never led the run; stop.
 
 ## Quota, rate limit or provider failure
 
-Preserve the partial work first: run `delta.sh` for that worker. Make sure the worker has settled. Then reassign the remaining work to the other provider, with an assignment that names the partial delta. Do not retry in a loop or set up paid access. A quota failure is not a reason to escalate to a strong model.
+Preserve the partial work first: run `delta.sh` for that session, once it has settled. Then reassign the remaining work to the subscription with headroom (`quota.py suggest`), with an assignment that names the partial delta. Do not retry in a loop or set up paid access.
+
+- **Quota line shows `?`:** the source is missing. Claude's comes from the Herdr usage bar (`~/.claude/herdr-usagebar/claude-limits-latest.json`, or `HERDR_DUO_CLAUDE_LIMITS`); Codex's from `$CODEX_HOME/sessions`. A working pane's own figure is the fallback. Never substitute weekly data or invent a value.
+- **The sibling ran out** (alert in the panel and the hook): collect its slice with `delta.sh --state <its state_dir>`, integrate what is sound, reassign the rest, and reopen a sibling after its reset if a slice remains. Its helpers keep working; collect them with `dispatch.sh --collect`.
 
 ## Worker went out of scope
 
@@ -55,15 +58,25 @@ Fixes, for the user to choose. Do not apply either one yourself, because both ch
 
 After the user applies a fix, rerun `run-init.sh --push` to confirm `push_check: ok`. Do not retry the push in a loop.
 
+## Effort settings
+
+The sibling and any handoff successor inherit the principal's recorded effort, translated per CLI (`ultra` becomes Claude `max`). If exact-session detection cannot read it, supply the actual effort with `run-init.sh --lead-effort <level>` at startup. Helpers use `HERDR_DUO_HELPER_EFFORT` (default `xhigh`); `spawn.sh --effort <level>` overrides either role for one session. Check the printed launch arguments when effort differs from what you expected.
+
+## Cleanup and abandoned runs
+
+`cleanup.sh --run $RUN --finish` refuses open sessions (exit 8): integrate their work and clean each session with `--name <name>` first. Finish prints the final status, closes the panel and deletes `$RUN`. Write the final report from that output; do not try to reopen the deleted run. Use `--keep-run` when you need the finished files for inspection.
+
+For abandoned leftovers, run `cleanup.sh --prune --dry-run`, inspect its list, then run `cleanup.sh --prune`. It removes run directories without deleting worktrees. Runs with existing worktrees are kept: recover and integrate those before normal session cleanup. A finished run deleted by `--finish` needs no recovery or pruning.
+
 ## Panel and lead handoff
 
-- **Unknown lead band:** use `handoff.sh --run $RUN --reason "quota low" --lead-model <original model>` to resolve missing model information. This cannot replace an already recorded band. Preserve the user's initial Opus/Astra or Sonnet/Sol choice; do not infer the model from a global default or another pane. Old runs without model snapshots retain legacy configured destinations.
-- **Unexpected successor model:** inspect the destinations recorded in `lead.json` and the initial model shown by `status.sh`. Explicit `HERDR_DUO_LEAD_CODEX_MODEL` / `HERDR_DUO_LEAD_CLAUDE_MODEL` override the pair at run creation; configuration changes afterward apply to new runs.
+- **Successor model:** the pair is fixed, Opus for Claude and Sol for Codex (`HERDR_DUO_OPUS_MODEL`, `HERDR_DUO_SOL_MODEL`), snapshotted in `lead.json` at run creation. An older run that recorded Astra uses Sol instead.
+- **Promoted sibling:** after a principal handoff with a live sibling, the sibling's pane is the principal (`status.sh` says so) and its old record shows `promoted`. It integrates its own slice into the user's checkout and owns every helper.
 - **Panel pane closed by accident:** split a pane and restart it: `herdr pane run <pane> "$SKILL_DIR/scripts/panel.sh --run $RUN"`. Without the panel there is no automatic handoff.
 - **A script says "this pane is no longer the lead":** a handoff happened. Stop and do nothing more in this run. If the user wants this pane to lead again, they ask for it, and you run `handoff.sh --run $RUN --adopt`.
 - **The successor shows a startup dialog:** the panel shows it and waits. The user answers it in the successor's pane; the panel then delivers the resume prompt.
 - **Successor stops after a status update or dispatch:** follow the autonomous continuation and goal recovery instructions in SKILL.md, Resume a run. Inspect existing panes and collect their results; do not request fresh authorization for the original task or create duplicate workers.
-- **NO LEAD / stranded:** every provider ran out of quota. The run waits with its state intact. When a quota resets, the panel marks the lead active again; or the user opens any lead and asks it to resume the run (SKILL.md, Resume a run).
+- **NO LEAD / stranded:** both 5h windows are out, or the successor's window was already empty (`handoff.sh` exit 4 names its reset time). The run waits with its state intact. When the principal's window resets the panel marks it active again; when the other one resets first, the panel hands off to it. The user can also open any lead and ask it to resume the run (SKILL.md, Resume a run).
 - **handoff.lock left behind:** a handoff was interrupted. Check `lead.json` and `herdr agent list`, then remove `$RUN/handoff.lock`.
 
 ## Native goal transfer fallback
@@ -74,7 +87,7 @@ Inspect `$RUN/goal-native.json` and `$RUN/goal-transfer.json`. `verified` means 
 
 Follow "Resume a run" in SKILL.md. Rebuild your picture from these, and do not start duplicate workers because conversation context is missing:
 
-- `status.sh --run $RUN`: sessions, tiers, status, fix rounds, escalations, open decisions;
+- `status.sh --run $RUN`: both windows, both leads, sessions by owner, status, fix rounds, alerts, open decisions;
 - `$RUN/<name>/baseline.json` and the delta files;
 - `herdr agent list`;
 - `guard.sh verify`.

@@ -3,20 +3,24 @@
 # state.json outside the repository, then prints the facts the lead needs as
 # literal absolute paths (shell variables do not survive between tool calls).
 #
-# Usage: run-init.sh --repo DIR [--goal TEXT] [--lead-model MODEL] [--worker-tier base|strong] [--commit] [--push] [--no-panel]
+# Usage: run-init.sh --repo DIR [--goal TEXT] [--lead-model MODEL] [--lead-effort LEVEL] [--commit] [--push] [--no-panel]
+#   --lead-model / --lead-effort supply the principal's actual model and effort when the
+#   exact session cannot be read; the sibling and any successor inherit that effort.
 #   --commit / --push only when the user's initial request explicitly asked for them.
-# Inside Herdr it also records the calling pane as the run's lead (lead.json) and opens
-# the status panel with the lead watchdog in a pane to the right of the lead.
+# Inside Herdr it also records the calling pane as the run's principal lead (lead.json),
+# opens the status panel with the lead watchdog to the right of it, and records which
+# subscription led this task, so the next task can start on the other one.
 set -euo pipefail
 . "$(dirname "$(realpath "$0")")/common.sh"
 
-repo=""; goal=""; commit=false; push=false; panel=yes; lead_model=""; worker_tier=base
+repo=""; goal=""; commit=false; push=false; panel=yes; lead_model=""; lead_effort=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo=$2; shift 2 ;;
     --goal) goal=$2; shift 2 ;;
     --lead-model) lead_model=$2; shift 2 ;;
-    --worker-tier) worker_tier=$2; shift 2 ;;
+    --lead-effort) lead_effort=$2; shift 2 ;;
+    --worker-tier) echo "note: --worker-tier is ignored; leads choose helper models per task" >&2; shift 2 ;;
     --commit) commit=true; shift ;;
     --push) push=true; shift ;;
     --no-panel) panel=no; shift ;;
@@ -24,7 +28,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$repo" ] || die "--repo is required"
-case "$worker_tier" in base|strong) ;; *) die "--worker-tier must be base or strong" ;; esac
+if [ -n "$lead_effort" ] && [ -z "$(lead_models effort --provider codex --value "$lead_effort")" ]; then
+  die "--lead-effort must be one of: low medium high xhigh max ultra"
+fi
 top=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) \
   || die "not a git repository: $repo. Run 'git init' and make an initial commit (workers start from HEAD)"
 repo=$top
@@ -67,15 +73,14 @@ for d in "$wt_root"/*/; do
   [ -d "$d" ] && stale="$stale $(basename "$d")"
 done
 
-python3 - "$run/state.json" "$repo" "$branch" "$head" "$default_branch" "$commit" "$push" "$goal" "$wt_root" "$worker_tier" <<'PY'
+python3 - "$run/state.json" "$repo" "$branch" "$head" "$default_branch" "$commit" "$push" "$goal" "$wt_root" <<'PY'
 import json, sys, datetime
-path, repo, branch, head, default_branch, commit, push, goal, wt_root, worker_tier = sys.argv[1:]
+path, repo, branch, head, default_branch, commit, push, goal, wt_root = sys.argv[1:]
 json.dump({
     "goal": goal, "repo": repo, "branch": branch, "head": head,
     "default_branch": default_branch or None,
     "commit_authorized": commit == "true", "push_authorized": push == "true",
     "wt_root": wt_root, "workers": [], "reviewers": [], "status": "planning",
-    "worker_tier": worker_tier,
     "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
 }, open(path, "w"), indent=2)
 PY
@@ -87,13 +92,15 @@ WT_ROOT=$wt_root
 REPO=$repo
 branch: $branch  head: ${head:0:12}  default_branch: ${default_branch:-unknown}
 commit_authorized: $commit  push_authorized: $push
-worker_tier: $worker_tier
 uncommitted: $modified modified tracked, $untracked untracked (use --from-checkout if workers need them)
 instruction_files:${instructions:- none}
 deps_candidates:${deps:- none}  (pass --deps-auto to copy them)
 stale_worktrees_in_WT_ROOT:${stale:- none}  (integrate or remove before reusing a name)
-access: luna=$HERDR_DUO_LUNA_ACCESS ($HERDR_DUO_LUNA_MODEL, effort $HERDR_DUO_LUNA_EFFORT)  haiku=$HERDR_DUO_HAIKU_MODE ($HERDR_DUO_HAIKU_MODEL)
+lead pair: claude=$HERDR_DUO_OPUS_MODEL  codex=$HERDR_DUO_SOL_MODEL
+helpers: claude=$HERDR_DUO_HAIKU_MODEL  codex=$HERDR_DUO_LUNA_MODEL (effort $HERDR_DUO_HELPER_EFFORT); any model via spawn.sh --model
+access: codex=$HERDR_DUO_CODEX_ACCESS  claude=$HERDR_DUO_CLAUDE_MODE
 EOF
+quota line || true
 
 # The lead is the pane that started the run; the panel and handoff build on this record.
 if [ -n "${HERDR_PANE_ID:-}" ]; then
@@ -101,6 +108,7 @@ if [ -n "${HERDR_PANE_ID:-}" ]; then
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["agent"].get("agent") or "")' 2>/dev/null || true)
   profile_args=(init --pane "$HERDR_PANE_ID")
   [ -z "$lead_model" ] || profile_args+=(--model "$lead_model")
+  [ -z "$lead_effort" ] || profile_args+=(--effort "$lead_effort")
   lead_profile=$(lead_models "${profile_args[@]}")
   panel_pane=""
   if [ "$panel" = yes ]; then
@@ -121,8 +129,20 @@ json.dump({"name": "lead1", "pane": pane, "kind": kind or None, "generation": 1,
            "panel_pane": panel or None, **json.loads(profile)}, open(path, "w"), indent=2)
 PY
   echo "lead: pane $HERDR_PANE_ID (${lead_kind:-unknown provider})  panel: ${panel_pane:-not started}  handoff: $HERDR_DUO_LEAD_FALLBACK"
-  echo "lead model: $(json_get "$run/lead.json" model)  band: $(json_get "$run/lead.json" band)  destinations: $(json_get "$run/lead.json" destinations)"
-  [ -n "$(json_get "$run/lead.json" band)" ] || echo "WARNING: lead model band unknown; automatic handoff needs an explicit destination. See SKILL.md, Panel and lead handoff."
+  echo "lead model: $(json_get "$run/lead.json" model)  effort: $(json_get "$run/lead.json" effort || true)  sibling/successor: $(json_get "$run/lead.json" destinations)"
+  echo "effort parity: sibling inherits the principal's effort; helpers run at $HERDR_DUO_HELPER_EFFORT"
+  # The next task should start on the other subscription when headroom is similar.
+  [ -z "$lead_kind" ] || python3 - "$HERDR_DUO_STATE_ROOT/balance.json" "$lead_kind" "$run" <<'PY'
+import json, os, sys, datetime
+path, kind, run = sys.argv[1:]
+try: b = json.load(open(path))
+except (OSError, ValueError): b = {}
+b["last_principal"] = kind
+b["history"] = (b.get("history", []) + [{"run": run, "principal": kind,
+                "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}])[-50:]
+with open(path + ".tmp", "w") as f: json.dump(b, f, indent=2)
+os.replace(path + ".tmp", path)
+PY
 fi
 
 # Hint for a failed origin check. Never prints the URL itself, so no credentials leak.
