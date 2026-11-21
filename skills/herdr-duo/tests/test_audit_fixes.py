@@ -256,5 +256,33 @@ class AuditMembersTests(unittest.TestCase):
                 self.assertEqual(members.find('p1'), (root, 'lead'))
 
 
+class PlacementTests(RunFixture, unittest.TestCase):
+    def test_new_tab_opens_in_the_runs_workspace_not_the_focused_one(self):
+        herdr = self.bin / 'herdr'
+        herdr.write_text('''#!/usr/bin/env python3
+import json, os, sys
+args = sys.argv[1:]
+with open(os.environ['PLACE_LOG'], 'a') as f:
+    f.write(json.dumps(args) + '\\n')
+if args[:2] == ['pane', 'layout']:
+    small = {'width': 40, 'height': 10, 'x': 0, 'y': 0}
+    print(json.dumps({'result': {'layout': {'tab_id': 'wX:t1', 'workspace_id': 'wX', 'panes': [
+        {'pane_id': 'panel', 'rect': small}]}}}))
+elif args[:2] == ['tab', 'create']:
+    print(json.dumps({'result': {'tab': {'tab_id': 'wX:t2'}, 'root_pane': {'pane_id': 'wX:p9'}}}))
+''')
+        herdr.chmod(0o755)
+        log = self.root / 'place.log'
+        env = dict(self.env, PLACE_LOG=str(log))
+        env.pop('HERDR_WORKSPACE_ID', None)
+        r = subprocess.run(['python3', '-B', str(SCRIPTS / 'place.py'), str(self.run), str(self.root)],
+                           env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.split(), ['wX:p9', 'wX:t2'])
+        create = next(c for c in map(json.loads, log.read_text().splitlines()) if c[:2] == ['tab', 'create'])
+        self.assertEqual(create[create.index('--workspace') + 1], 'wX')
+        self.assertEqual(json.loads((self.run / 'state.json').read_text())['tabs'], ['wX:t2'])
+
+
 if __name__ == '__main__':
     unittest.main()

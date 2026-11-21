@@ -60,11 +60,14 @@ def main():
     for tab in state.get("tabs", []):
         probes += [r["pane"] for r in live if r.get("tab") == tab][:1]
     seen = set()
+    # A new tab belongs in the run's workspace, not in whichever workspace has focus.
+    workspace = os.environ.get("HERDR_WORKSPACE_ID")
     for probe in probes:
         try:
             layout = herdr("pane", "layout", "--pane", probe)["layout"]
         except Exception:
             continue
+        workspace = workspace or layout.get("workspace_id")
         if layout["tab_id"] in seen:
             continue
         seen.add(layout["tab_id"])
@@ -77,7 +80,8 @@ def main():
 
     # No room left in any tab: open a new one. Its first pane is used as is.
     label = f"{os.path.basename(state.get('repo', 'duo'))} {len(state.get('tabs', [])) + 2}"
-    res = herdr("tab", "create", "--label", label, "--cwd", cwd, "--no-focus")
+    res = herdr("tab", "create", *(("--workspace", workspace) if workspace else ()),
+                "--label", label, "--cwd", cwd, "--no-focus")
     tab = res["tab"]["tab_id"]
     path = os.path.join(run, "state.json")
     with open(path + ".lock", "w") as lock:  # same lock as state_edit in common.sh
