@@ -8,6 +8,7 @@ with a `SKILL.md` that Claude Code and other Agent Skills clients can load.
 | Skill | Description |
 |---|---|
 | [herdr-duo](skills/herdr-duo) | Runs one task across your Claude and Codex subscriptions inside Herdr: the lead you start (Opus or Sol) does the main work, hands a separable slice to its sibling lead on the other subscription so both 5-hour windows are used evenly, and both leads open as many Luna/Haiku helpers as the task can use. Keeps a quota and progress panel, automatic lead handoff, isolated worktrees, cross-review and verified integration. |
+| [herdr-single](skills/herdr-single) | The same orchestration on one subscription, Claude only or Codex only: the lead you start does the main work and opens helpers and reviewers of that subscription, paced by its 5-hour window. Keeps the progress and quota panel, isolated worktrees, independent same-subscription review and verified integration; when the window runs out the run parks and resumes at the reset. |
 
 ## Install
 
@@ -18,6 +19,7 @@ Uses the [vercel-labs/skills](https://github.com/vercel-labs/skills) CLI:
 ```bash
 npx skills add aDDxD/skills
 npx skills add aDDxD/skills --skill herdr-duo
+npx skills add aDDxD/skills --skill herdr-single
 ```
 
 ### Option B: manual, with `install.sh`
@@ -69,6 +71,30 @@ When using Codex as the lead, launch it **inside the Herdr pane** with
 started outside Herdr may lack the pane's `HERDR_*` variables. The skill adds
 this option to Codex workers and reviewers when supported. Do not manually
 export `HERDR_ENV=1`: the socket and caller IDs must also come from the pane.
+
+## Requirements for herdr-single
+
+- **Herdr**, with `herdr`, `git` and `python3` on `PATH`, run from a Herdr pane (`HERDR_ENV=1`), as for herdr-duo.
+- **One** of the Claude Code CLI or the Codex CLI. A run uses only the subscription of the lead that starts it (detected from the pane, or `run-init.sh --provider codex|claude`); `spawn.sh` and handoffs refuse the other one, so it may be logged out or not installed.
+- Models per provider, set in `~/.config/herdr-single/config.env`:
+
+  | Role | Claude | Codex |
+  |---|---|---|
+  | Lead and successor lead | `HERDR_SINGLE_CLAUDE_LEAD_MODEL` (Opus) | `HERDR_SINGLE_CODEX_LEAD_MODEL` (Sol) |
+  | Helper | `HERDR_SINGLE_CLAUDE_HELPER_MODEL` (Haiku) | `HERDR_SINGLE_CODEX_HELPER_MODEL` (Luna) |
+  | Reviewer | `HERDR_SINGLE_CLAUDE_REVIEWER_MODEL` (Sonnet) | `HERDR_SINGLE_CODEX_REVIEWER_MODEL` (Sol) |
+
+  A successor lead keeps the starting lead's own model and effort. Helpers and reviewers run at `HERDR_SINGLE_HELPER_EFFORT` (`xhigh`).
+- Only the 5-hour window counts. `quota.py suggest --provider <p>` turns it into a number of helpers: projected surplus at reset is spent on helpers, a window on pace gets few, and below `HERDR_SINGLE_LEAD_RESERVE_PCT` (30%) none. `HERDR_SINGLE_MAX_HELPERS` (6) is the ceiling.
+- When the window runs out the panel parks the run; at the reset it resumes the same lead pane, or starts a fresh lead of the same provider if that pane is gone. `HERDR_SINGLE_LEAD_RESUME=fresh` always starts a fresh lead; `off` only warns.
+- State lives under `~/.local/state/herdr-single`, apart from herdr-duo's, so both skills can be installed together.
+- Optional: `~/.agents/skills/herdr-single/scripts/install-hooks.sh --claude-only` (or `--codex-only`) adds the quota guardian hook for that CLI.
+
+Run `~/.agents/skills/herdr-single/scripts/preflight.sh` to check these. It is read-only.
+
+### Shared scripts
+
+herdr-single reuses most of herdr-duo's scripts (worktrees, dispatch, guard, delta, integration, cleanup, placement, goal transfer). Each skill folder stays self-contained, so the shared files are copies, listed in `scripts/shared-files.sh`. Change a shared file in `skills/herdr-duo`, then run `scripts/sync-shared.sh`; `scripts/check-shared.sh` (part of `validate.sh` and CI) fails when the copies drift.
 
 ## Adding a skill
 

@@ -54,6 +54,6 @@ if [ -n "$live" ]; then printf '%s\n' "$live" | sed 's/^/  /'; else echo "  none
 if [ "$(has_kind codex)" = no ] && [ "$(has_kind claude)" = no ]; then
   fail "herdr advertises neither codex nor claude (advertised: ${kinds:-none})."
 fi
-[ "$codex_ok" = yes ] || echo "WARN: Codex unavailable or its flags were not confirmed; run the task on Claude only." >&2
-[ "$claude_ok" = yes ] || echo "WARN: Claude Code unavailable or its flags were not confirmed; run the task on Codex only." >&2
+[ "$codex_ok" = yes ] || echo "WARN: Codex unavailable or its flags were not confirmed; run the task on Claude only (the herdr-single skill is made for that)." >&2
+[ "$claude_ok" = yes ] || echo "WARN: Claude Code unavailable or its flags were not confirmed; run the task on Codex only (the herdr-single skill is made for that)." >&2
 exit 0

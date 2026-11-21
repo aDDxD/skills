@@ -70,8 +70,16 @@ else
 fi
 
 # Regression tests use only synthetic provider storage and a fake Herdr CLI.
-if ! python3 -B -m unittest discover -s "$skills_dir/herdr-duo/tests"; then
-  fail "herdr-duo goal handoff regression tests failed"
+while IFS= read -r -d '' tests_dir; do
+  skill="$(basename "$(dirname "$tests_dir")")"
+  if ! python3 -B -m unittest discover -s "$tests_dir"; then
+    fail "$skill regression tests failed"
+  fi
+done < <(find "$skills_dir" -mindepth 2 -maxdepth 2 -type d -name tests -print0 | sort -z)
+
+# herdr-single shares part of its scripts with herdr-duo; they must not drift apart.
+if ! "$repo_root/scripts/check-shared.sh"; then
+  fail "shared files between herdr-duo and herdr-single drifted"
 fi
 
 if (( failures > 0 )); then
