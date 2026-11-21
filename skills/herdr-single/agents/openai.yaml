@@ -1,0 +1,4 @@
+interface:
+  display_name: "Herdr Single"
+  short_description: "Run one task on Claude only or Codex only inside Herdr"
+  default_prompt: "Use $herdr-single for this task."
