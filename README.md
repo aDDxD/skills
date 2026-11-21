@@ -92,6 +92,17 @@ export `HERDR_ENV=1`: the socket and caller IDs must also come from the pane.
 
 Run `~/.agents/skills/herdr-single/scripts/preflight.sh` to check these. It is read-only.
 
+### Known limitations (herdr-single)
+
+Open on purpose; fix them when they start to cost time.
+
+1. **Claude folder-trust dialog per helper worktree.** Claude Code asks once per worktree path (`~/.local/state/herdr-single/wt/<repo>-<hash>/<name>`). A Claude-only run therefore stops at the first spawn of each new helper name until the user answers the dialog in that pane; the skill never answers it. Codex is not affected: it trusts at the repository root. Reusing names (`h1`, `h2`, ...) makes it a one-time cost per name and repository.
+   *Proposed fix:* a `trust-warmup.sh --repo <repo> [--names h1,h2,h3]` that pre-creates those worktree paths and prints them, so the user approves them once before a run; or pre-trusting them through Claude Code's settings if it gains a supported option for that.
+2. **Usage-limited native goal after a fresh lead.** When a fresh lead of the same provider takes over after a reset, a native goal the provider marked `usage_limited` is not restored with `/goal`, because `transferable()` in the shared `goal-handoff.py` restores it only on the *other* provider (herdr-duo's case). The resume prompt and the portable checkpoint (`state.json`, `progress.json`, `goal.json`) still carry the task, and a lead resumed in place keeps its own goal.
+   *Proposed fix:* allow a same-provider restore when the window has reset since the goal was limited; change it in herdr-duo, adjust `test_provider_quota_handoff_preserves_goal_without_renewing_budget`, then run `scripts/sync-shared.sh`.
+3. **Duplicated test fixtures.** `tests/test_single.py` (herdr-single) and `tests/test_leads.py` / `tests/test_quota.py` (herdr-duo) carry near-identical `RunFixture` and `QuotaFixture` classes.
+   *Proposed fix:* move them to a fixtures module listed in `scripts/shared-files.sh`.
+
 ### Shared scripts
 
 herdr-single reuses most of herdr-duo's scripts (worktrees, dispatch, guard, delta, integration, cleanup, placement, goal transfer). Each skill folder stays self-contained, so the shared files are copies, listed in `scripts/shared-files.sh`. Change a shared file in `skills/herdr-duo`, then run `scripts/sync-shared.sh`; `scripts/check-shared.sh` (part of `validate.sh` and CI) fails when the copies drift.
